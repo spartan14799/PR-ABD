@@ -2,6 +2,7 @@ from typing import Callable, Dict
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+from typing import Callable, Dict
 
 CutFunc = Callable[[pd.Series, int], pd.Series]
 

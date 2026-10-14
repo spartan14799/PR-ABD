@@ -2,11 +2,12 @@ from math import ceil, log2
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+from typing import Dict, Callable
 
 methods: Dict[str, Callable[[pd.Series], int]] = {}
 def __methods(name: str) -> Callable[[pd.Series], int]:
     def decorador(func: Callable[[pd.Series, int], pd.Series]) -> Callable[[pd.Series, int], pd.Series]:
-        SIMPLE_METHODS[name] = func
+        methods[name] = func
 
         return func
 
