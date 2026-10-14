@@ -59,7 +59,7 @@ Diseñar e implementar un pipeline de Análisis Formal de Conceptos que permita 
 2. **Calcular los conceptos formales:** implementar el algoritmo *NextClosure* para obtener todos los conceptos del contexto y construir su retículo, junto con su representación gráfica como diagrama de Hasse.
 3. **Extraer implicaciones:** obtener la base canónica de *Guigues-Duquenne*, es decir, el conjunto mínimo y no redundante de implicaciones que describe los datos.
 4. **Validar formalmente:** verificar las dependencias obtenidas mediante los *axiomas de Armstrong*, el cálculo de clausuras de atributos y la identificación de claves candidatas.
-5. **Aplicar a Machine Learning:** utilizar los conceptos formales como nuevas características para entrenar modelos de clasificación (SVM) y agrupamiento (*k-means*), comparando su desempeño frente a la representación original.
+5. **Aplicar a Machine Learning: (Opcional)** utilizar los conceptos formales como nuevas características para entrenar modelos de clasificación (SVM) y agrupamiento (*k-means*), comparando su desempeño frente a la representación original.
 
 ## Datasets
 
@@ -68,8 +68,8 @@ Se evaluaran tres conjuntos de datos según su naturaleza y su idoneidad para FC
 | Dataset | Tipo de datos | Rol en el proyecto |
 |---|---|---|
 | **Animal Species** | Atributos cualitativos y binarios (plumas, leche, alas, etc.) | Dataset de referencia para depurar y validar la corrección de los algoritmos |
-| **Breast Cancer Wisconsin** | Atributos numéricos continuos (radio, textura, área, etc.) y clase binaria (maligno / benigno) | Dataset principal para el pipeline completo, incluida la fase de Machine Learning |
-| **Spotify Recommendation** | Variables mixtas (características de audio y metadatos) | Evaluado, pero descartado por ahora |
+| **Breast Cancer Wisconsin** | Atributos numéricos continuos (radio, textura, área, etc.) y clase binaria (maligno / benigno) | Dataset principal para el pipeline completo, incluida la fase de Machine Learning si es posible |
+| **Spotify Recommendation** | Variables mixtas (características de audio y metadatos) |
 
 **Estrategia de trabajo.** Primero se utiliza *Animal Species*, cuya estructura ya es binaria y de tamaño reducido, lo que permite verificar manualmente los resultados de cada algoritmo. Una vez validada la implementación, el pipeline completo se aplica sobre *Breast Cancer Wisconsin*, que exige un esquema explícito de discretización y es el más adecuado para la fase de aprendizaje automático.
 
