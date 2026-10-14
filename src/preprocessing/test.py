@@ -26,7 +26,7 @@ print(df_ew_sturges["edad"].value_counts().sort_index())
 print("\n" + "=" * 50 + "\n")
 
 df_ef_freedman = discretize(
-    data, cuant_type="equal_frequency", quantiles="freedman"
+    data, cuant_type="equal_frequency", quantiles=2
 )
 print("--- Discretizado: equal_frequency + freedman ---")
 print(df_ef_freedman.head())
@@ -34,7 +34,7 @@ print("\nConteo de clases en 'ingresos':")
 print(df_ef_freedman["ingresos"].value_counts().sort_index())
 print("\n" + "=" * 50 + "\n")
 
-df_km_scott = discretize(data, cuant_type="kmeans_1d", quantiles="scott")
+df_km_scott = discretize(data, cuant_type="kmeans_1d", quantiles=2)
 print("--- Discretizado: kmeans_1d + scott ---")
 print(df_km_scott.head())
 print("\nConteo de clases en 'puntaje':")
