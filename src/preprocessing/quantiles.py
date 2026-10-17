@@ -6,7 +6,7 @@ from typing import Dict, Callable
 
 methods: Dict[str, Callable[[pd.Series], int]] = {}
 def __methods(name: str) -> Callable[[pd.Series], int]:
-    def decorador(func: Callable[[pd.Series, int], pd.Series]) -> Callable[[pd.Series, int], pd.Series]:
+    def decorador(func: Callable[[pd.Series, int], int]) -> Callable[[pd.Series, int], int]:
         methods[name] = func
 
         return func

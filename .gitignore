@@ -1,1 +1,3 @@
 .db_analisis/
+__pycache__/
+*.py[cod]
