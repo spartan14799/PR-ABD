@@ -1,4 +1,4 @@
-from typing import Hashable, Iterable, Iterator, Sequence, Union
+from typing import Hashable, Iterable, Iterator, Sequence, Union, Optional
 
 import numpy as np
 import pandas as pd
@@ -91,15 +91,16 @@ class FormalContext:
 
         return self._to_names(c, self.attributes) if human else c
 
-    def _oplus(self, A: int, i: int) -> int:
+    def _oplus(self, A: int, i: int, cl=None) -> int:
+        cl = cl or self.closure
         lower = (1 << i) - 1
-        return self.closure((A & lower) | (1 << i))
+        return cl((A & lower) | (1 << i))
 
-    def next_closure(self, A: int) -> Optional[int]:
+    def next_closure(self, A: int, cl=None) -> Optional[int]:
         for i in range(self.n_att - 1, -1, -1):
             if A >> i & 1:
                 continue
-            B = self._oplus(A, i)
+            B = self._oplus(A, i, cl)
             lower = (1 << i) - 1
             if B & lower == A & lower:
                 return B
