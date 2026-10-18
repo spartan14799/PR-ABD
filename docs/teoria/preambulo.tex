@@ -1,0 +1,40 @@
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish, es-noshorthands, es-tabla, es-nodecimaldot]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=2.5cm]{geometry}
+
+\usepackage{amsmath, amssymb, amsthm, mathtools}
+
+\usepackage{booktabs, tabularx, array}
+
+\usepackage{csquotes}
+\usepackage[backend=biber, style=authoryear, maxcitenames=2,
+            giveninits=true, uniquename=false, uniquelist=false]{biblatex}
+\DeclareDelimFormat{nameyeardelim}{\addcomma\space}
+
+\usepackage{xcolor}
+\definecolor{enlace}{RGB}{0, 70, 140}
+\usepackage[colorlinks=true, linkcolor=enlace, citecolor=enlace,
+            urlcolor=enlace]{hyperref}
+
+
+\theoremstyle{plain}
+\newtheorem{teorema}{Teorema}[section]
+\newtheorem{proposicion}[teorema]{Proposición}
+\newtheorem{lema}[teorema]{Lema}
+\newtheorem{corolario}[teorema]{Corolario}
+
+\theoremstyle{definition}
+\newtheorem{definicion}[teorema]{Definición}
+\newtheorem{regla}[teorema]{Regla}
+\newtheorem{ejemplo}[teorema]{Ejemplo}
+\newtheorem{observacion}[teorema]{Observación}
+
+\newcommand{\K}{\mathbb{K}}
+\newcommand{\R}{\mathbb{R}}
+\DeclareMathOperator{\SSE}{SSE}
+\DeclareMathOperator{\AMISE}{AMISE}
+\DeclareMathOperator{\IQR}{IQR}
