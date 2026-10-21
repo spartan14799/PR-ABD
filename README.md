@@ -24,7 +24,6 @@ Universidad Nacional de Colombia · Ciencias de la Computación
 - [Metodología](#metodología)
 - [Estructura del repositorio](#estructura-del-repositorio)
 - [Tecnologías](#tecnologías)
-- [Instalación y uso](#instalación-y-uso)
 - [Hoja de ruta](#hoja-de-ruta)
 - [Documentación](#documentación)
 - [Equipo](#equipo)
@@ -63,17 +62,17 @@ Diseñar e implementar un pipeline de Análisis Formal de Conceptos que permita 
 
 ## Datasets
 
-Se evaluaran tres conjuntos de datos según su naturaleza y su idoneidad para FCA:
+Se evaluarán tres conjuntos de datos según su naturaleza y su idoneidad para FCA:
 
 | Dataset | Tipo de datos | Rol en el proyecto |
 |---|---|---|
 | **Animal Species** | Atributos cualitativos y binarios (plumas, leche, alas, etc.) | Dataset de referencia para depurar y validar la corrección de los algoritmos |
 | **Breast Cancer Wisconsin** | Atributos numéricos continuos (radio, textura, área, etc.) y clase binaria (maligno / benigno) | Dataset principal para el pipeline completo, incluida la fase de Machine Learning si es posible |
-| **Spotify Recommendation** | Variables mixtas (características de audio y metadatos) |
+| **Spotify Recommendation** | Variables mixtas (características de audio y metadatos) | En evaluación |
 
 **Estrategia de trabajo.** Primero se utiliza *Animal Species*, cuya estructura ya es binaria y de tamaño reducido, lo que permite verificar manualmente los resultados de cada algoritmo. Una vez validada la implementación, el pipeline completo se aplica sobre *Breast Cancer Wisconsin*, que exige un esquema explícito de discretización y es el más adecuado para la fase de aprendizaje automático.
 
-El dataset de *Spotify* se descartó para esta primera implementación: tras la discretización genera un contexto muy denso, lo que provoca un crecimiento combinatorio en el número de conceptos y vuelve impráctico su cálculo y visualización.
+El dataset de *Spotify* sigue en evaluación. Sus atributos de audio y de género pueden dar reglas de asociación interesantes, pero tras la discretización tiende a generar un contexto muy denso, lo que puede provocar un crecimiento combinatorio en el número de conceptos y dificultar su cálculo y visualización. Para usarlo habrá que controlar el tamaño del contexto, por ejemplo con menos intervalos por variable o con un subconjunto de los atributos.
 
 ## Metodología
 
@@ -90,13 +89,13 @@ flowchart LR
     E --> H["Machine Learning<br/>(SVM / k-means)"]
 ```
 
-1. **Normalización y escalado conceptual.** Los datos originales se convierten en una tabla binaria de objetos por atributos. Las variables continuas se discretizan en intervalos (por ejemplo, por cuantiles) y luego se codifican de forma nominal u ordinal.
+1. **Normalización y escalado conceptual.** Los datos originales se convierten en una tabla binaria de objetos por atributos. Las variables numéricas se discretizan en intervalos (de igual ancho, de igual frecuencia o con *k-means* en una dimensión), con un número de intervalos fijo o elegido con las reglas de Sturges, Freedman–Diaconis o Scott. Luego cada variable se codifica con una escala nominal u ordinal, y el resultado es la matriz de incidencia del contexto formal.
 2. **Derivación de conceptos formales.** Con el algoritmo *NextClosure* se generan, de forma determinista y sin repeticiones, todos los conceptos del contexto. Con ellos se construye el retículo y se exporta su diagrama de Hasse.
 3. **Extracción de la base canónica.** Se identifican los pseudo-intentos del contexto para obtener la base de *Guigues-Duquenne*: el conjunto más pequeño posible de implicaciones a partir del cual se pueden deducir todas las demás.
 4. **Validación axiomática.** Las dependencias obtenidas se verifican computacionalmente mediante clausuras de atributos y los axiomas de Armstrong (reflexividad, aumentación y transitividad), y se calculan las claves candidatas.
 5. **Experimentación en Machine Learning.** Los conceptos del retículo se usan como nuevas características binarias para entrenar modelos SVM y *k-means*, y se compara su desempeño frente al uso de los datos sin FCA.
 
-> Los fundamentos teóricos, las demostraciones y el pseudocódigo de cada algoritmo se irán incorporando a este documento a medida que avance el proyecto.
+> Los fundamentos teóricos y las demostraciones están en [`docs/teoria/teoria.pdf`](docs/teoria/teoria.pdf) (fuentes en LaTeX en [`docs/teoria/`](docs/teoria/)), y la explicación y el pseudocódigo de cada módulo en [`docs/codigo/`](docs/codigo/). Ambos se amplían a medida que avanza el proyecto.
 
 ## Estructura del repositorio
 
@@ -111,6 +110,17 @@ fca-database-analysis/
 │   ├── processed/            # Datos limpios y binarizados
 │   └── contexts/             # Contextos formales (.cxt o .json)
 ├── docs/
+│   ├── teoria/               # Fundamentos teóricos en LaTeX
+│   │   ├── teoria.tex        # Documento principal
+│   │   ├── preambulo.tex     # Paquetes, entornos de teorema y macros
+│   │   ├── referencias.bib   # Bibliografía (biber)
+│   │   ├── secciones/        # Un archivo por fase: 01_contexto_formal.tex, …
+│   │   └── teoria.pdf        # Versión compilada
+│   ├── codigo/               # Un .md por cada archivo de src/, con la misma estructura de carpetas
+│   │   └── preprocessing/
+│   │       ├── quantiles.md
+│   │       ├── cuant_type.md
+│   │       └── scaler.md
 │   ├── report.pdf            # Informe escrito en LaTeX
 │   └── presentation.pdf      # Presentación del proyecto
 ├── notebooks/
@@ -120,7 +130,9 @@ fca-database-analysis/
 │   └── 04_ml_experiments.ipynb       # Reducción de dimensionalidad y SVM / k-means
 ├── src/
 │   ├── preprocessing/
-│   │   └── scaler.py         # Escalado nominal, ordinal y por cuantiles
+│   │   ├── quantiles.py      # Reglas para el número de intervalos (Sturges, Freedman–Diaconis, Scott)
+│   │   ├── cuant_type.py     # Métodos de discretización (igual ancho, igual frecuencia, k-means 1D)
+│   │   └── scaler.py         # Discretización de la tabla y escalado nominal u ordinal
 │   ├── fca/
 │   │   ├── context.py        # Clase FormalContext
 │   │   ├── algorithms.py     # NextClosure y operadores de derivación
@@ -142,11 +154,12 @@ fca-database-analysis/
 
 - **Python 3** como lenguaje principal.
 - **Pandas** para la carga y transformación de datos.
+- **NumPy** para el cálculo numérico de la discretización y el escalado.
 - **Graphviz / NetworkX** para la visualización del retículo y los diagramas de Hasse.
 - **scikit-learn** para los modelos SVM y *k-means*.
 - **Jupyter Notebooks** para la experimentación y presentación de resultados.
 - **pytest** para las pruebas unitarias.
-- **LaTeX** para el informe final.
+- **LaTeX** para los fundamentos teóricos y el informe final.
 
 ## Hoja de ruta
 
@@ -158,13 +171,18 @@ fca-database-analysis/
 
 ## Documentación
 
-A medida que el proyecto avance, este README y la carpeta `docs/` irán incorporando:
+La documentación técnica está en la carpeta [`docs/`](docs/):
 
-- Fundamentos teóricos de FCA, implicaciones y dependencias funcionales.
-- Demostraciones de los resultados utilizados.
-- Pseudocódigo y explicación detallada de cada algoritmo.
-- Resultados experimentales y análisis.
-- Informe final (`docs/report.pdf`) y presentación (`docs/presentation.pdf`).
+| Documento | Contenido |
+|---|---|
+| [Fundamentos teóricos](docs/teoria/teoria.pdf) | Definiciones, proposiciones, teoremas y demostraciones de cada fase, en LaTeX ([fuentes](docs/teoria/)). Por ahora cubre la Fase 1: contextos formales, escalado conceptual y discretización. |
+| [`quantiles.py`](docs/codigo/preprocessing/quantiles.md) | Reglas para elegir el número de intervalos: Sturges, Freedman–Diaconis y Scott. |
+| [`cuant_type.py`](docs/codigo/preprocessing/cuant_type.md) | Métodos de discretización: igual ancho, igual frecuencia y *k-means* en una dimensión. |
+| [`scaler.py`](docs/codigo/preprocessing/scaler.md) | Discretización de la tabla y escalado nominal u ordinal hasta la matriz de incidencia. |
+
+Para compilar la teoría, ejecutar `latexmk -pdf teoria.tex` dentro de `docs/teoria/` (requiere pdflatex y biber) o subir esa carpeta a Overleaf.
+
+Cada documento de código explica el módulo e incluye su pseudocódigo, su complejidad, los casos borde y un ejemplo de uso. A medida que avance el proyecto se agregarán NextClosure, la base de Guigues-Duquenne, los axiomas de Armstrong y la fase de Machine Learning, además del informe final (`docs/report.pdf`) y la presentación (`docs/presentation.pdf`).
 
 ## Equipo
 
