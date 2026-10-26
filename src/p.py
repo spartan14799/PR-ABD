@@ -1,70 +1,44 @@
 import subprocess
 import sys
+import random
 
-texto = """Muchos años después, frente al pelotón de fusilamiento, el coronel Aureliano Buendía había de
-recordar aquella tarde remota en que su padre lo llevó a conocer el hielo. Macondo era entonces
-una aldea de veinte casas de barro y cañabrava construidas a la orilla de un río de aguas diáfanas
-que se precipitaban por un lecho de piedras pulidas, blancas y enormes como huevos
-prehistóricos. El mundo era tan reciente, que muchas cosas carecían de nombre, y para
-mencionarlas había que señalarías con el dedo. Todos los años, por el mes de marzo, una familia
-de gitanos desarrapados plantaba su carpa cerca de la aldea, y con un grande alboroto de pitos y
-timbales daban a conocer los nuevos inventos. Primero llevaron el imán. Un gitano corpulento, de
-barba montaraz y manos de gorrión, que se presentó con el nombre de Melquiades, hizo una
-truculenta demostración pública de lo que él mismo llamaba la octava maravilla de los sabios
-alquimistas de Macedonia. Fue de casa en casa arrastrando dos lingotes metálicos, y todo el
-mundo se espantó al ver que los calderos, las pailas, las tenazas y los anafes se caían de su sitio,
-y las maderas crujían por la desesperación de los clavos y los tornillos tratando de desenclavarse,
-y aun los objetos perdidos desde hacía mucho tiempo aparecían por donde más se les había
-buscado, y se arrastraban en desbandada turbulenta detrás de los fierros mágicos de Melquíades.
-«Las cosas, tienen vida propia -pregonaba el gitano con áspero acento-, todo es cuestión de
-despertarles el ánima.» José Arcadio Buendía, cuya desaforada imaginación iba siempre más lejos
-que el ingenio de la naturaleza, y aun más allá del milagro y la magia, pensó que era posible
-servirse de aquella invención inútil para desentrañar el oro de la tierra. Melquíades, que era un
-hombre honrado, le previno: «Para eso no sirve.» Pero José Arcadio Buendía no creía en aquel
-tiempo en la honradez de los gitanos, así que cambió su mulo y una partida de chivos por los dos
-lingotes imantados. Úrsula Iguarán, su mujer, que contaba con aquellos animales para ensanchar
-el desmedrado patrimonio doméstico, no consiguió disuadirlo. «Muy pronto ha de sobrarnos oro
-para empedrar la casa», replicó su marido. Durante varios meses se empeñó en demostrar el
-acierto de sus conjeturas. Exploró palmo a palmo la región, inclusive el fondo del río, arrastrando
-los dos lingotes de hierro y recitando en voz alta el conjuro de Melquíades. Lo único que logró
-desenterrar fue una armadura del siglo xv con todas sus partes soldadas por un cascote de óxido,
-cuyo interior tenía la resonancia hueca de un enorme calabazo lleno de piedras. Cuando José
-Arcadio Buendía y los cuatro hombres de su expedición lograron desarticular la armadura,
-encontraron dentro un esqueleto calcificado que llevaba colgado en el cuello un relicario de cobre
-con un rizo de mujer.
-En marzo volvieron los gitanos. Esta vez llevaban un catalejo y una lupa del tamaño de un
-tambor, que exhibieron como el último descubrimiento de los judíos de Amsterdam. Sentaron una
-gitana en un extremo de la aldea e instalaron el catalejo a la entrada de la carpa. Mediante el
-pago de cinco reales, la gente se asomaba al catalejo y veía a la gitana al alcance de su mano.
-«La ciencia ha eliminado las distancias», pregonaba Melquíades. «Dentro de poco, el hombre
-podrá ver lo que ocurre en cualquier lugar de la tierra, sin moverse de su casa.» Un mediodía
-ardiente hicieron una asombrosa demostración con la lupa gigantesca: pusieron un montón de
-hierba seca en mitad de la calle y le prendieron fuego mediante la concentración de los rayos
-solares. José Arcadio Buendía, que aún no acababa de consolarse por el fracaso de sus imanes,
-concibió la idea de utilizar aquel invento como un arma de guerra. Melquíades, otra vez, trató de
-disuadirlo. Pero terminó por aceptar los dos lingotes imantados y tres piezas de dinero colonial a
-cambio de la lupa. Úrsula lloró de consternación. Aquel dinero formaba parte de un cofre de
-monedas de oro que su padre había acumulado en toda una vida de privaciones, y que ella había
-enterrado debajo de la cama en espera de una buena ocasión para invertirías. José Arcadio
-Buendía no trató siquiera de consolarla, entregado por entero a sus experimentos tácticos con la
-abnegación de un científico y aun a riesgo de su propia vida. Tratando de demostrar los efectos
-de la lupa en la tropa enemiga, se expuso él mismo a la concentración de los rayos solares y
-sufrió quemaduras que se convirtieron en úlceras y tardaron mucho tiempo en sanar. Ante las
-protestas de su mujer, alarmada por tan peligrosa inventiva, estuvo a punto de incendiar la casa.
-Pasaba largas horas en su cuarto, haciendo cálculos sobre las posibilidades estratégicas de su
-arma novedosa, hasta que logró componer un manual de una asombrosa claridad didáctica y u"""
+def texto_a_bits(texto: str) -> str:
+    return ''.join(format(b, '08b') for b in texto.encode('utf-8'))
 
-# Convertir el texto a bits (UTF-8)
-cadena_bits = ''.join(format(b, '08b') for b in texto.encode('utf-8'))
+def generar_thue_morse(n_bits: int) -> str:
+    """Genera secuencia autosimilar/fractal sin periodicidad simple."""
+    s = "0"
+    while len(s) < n_bits:
+        s += "".join("1" if c == "0" else "0" for c in s)
+    return s[:n_bits]
 
-print(f"Generados {len(cadena_bits)} bits a partir del texto.")
-print("Invocando test.py...\n")
-print("-" * 50)
+CASOS_DE_PRUEBA = {
+    "Patrón Periódico Simple (0101...)": "01" * 1000,
+    "Patrón Periódico Lógico (11001100...)": "11001100" * 250,
+    "Cadenas Largas (Bloques 0s y 1s)": ("0" * 500 + "1" * 500) * 2,
+    "Datos Dispersos (95% 0s, 5% 1s)": ("0" * 95 + "1" * 5) * 20,
+    "Texto Real ASCII (Repetitivo)": texto_a_bits("a" * 200),
+    "Texto Real Español (Quijote)": texto_a_bits("En un lugar de la Mancha, de cuyo nombre no quiero acordarme... " * 10),
+    "Código Fuente Python": texto_a_bits("def suma(a, b):\n    return a + b\n" * 20),
+    "Secuencia Thue-Morse (Fractal)": generar_thue_morse(2000),
+    "Aleatorio Puro (Entropía Máxima)": "".join(random.choices(["0", "1"], k=2000)),
+}
 
-# Ejecutar test.py usando subprocess
-try:
-    subprocess.run([sys.executable, "modelo_rapido.py", cadena_bits], check=True)
-except FileNotFoundError:
-    print("Error: Asegúrate de que 'test.py' esté en la misma carpeta que este script.")
-except subprocess.CalledProcessError as e:
-    print(f"Error al ejecutar test.py: {e}")
+
+def probar_algoritmo(script_nombre="modelo_rapido.py"):
+    print(f"=== EJECUTANDO BATERÍA DE PRUEBAS SOBRE: {script_nombre} ===\n")
+    
+    for nombre, bits in CASOS_DE_PRUEBA.items():
+        print(f"--> Prueba: {nombre}")
+        print(f"    Longitud original: {len(bits)} bits")
+        try:
+            subprocess.run([sys.executable, script_nombre, bits], check=True)
+        except FileNotFoundError:
+            print(f"Error: No se encontró '{script_nombre}'. Verifique la ruta.")
+            break
+        except subprocess.CalledProcessError as e:
+            print(f"Error durante la ejecución del caso: {e}")
+        print("-" * 60)
+
+if __name__ == "__main__":
+    probar_algoritmo("modelo_rapido.py")
