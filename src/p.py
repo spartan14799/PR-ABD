@@ -41,4 +41,4 @@ def probar_algoritmo(script_nombre="modelo_rapido.py"):
         print("-" * 60)
 
 if __name__ == "__main__":
-    probar_algoritmo("modelo_rapido.py")
+    probar_algoritmo("hibrido.py")

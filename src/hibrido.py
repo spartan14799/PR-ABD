@@ -1,6 +1,14 @@
 import sys
+import os
 import math
-from fca.context import FormalContext, bits
+import time
+from typing import Optional
+
+import numpy as np
+import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
+
+from fca.context import FormalContext
 
 BITS_PRED = 1
 
@@ -27,7 +35,7 @@ def construir_trie_reglas(reglas: dict) -> TrieNode:
 
 def serializar_trie(root: TrieNode) -> str:
     """Serializa el Trie en una cadena ultracompacta de bits.
-    
+
     Estructura por nodo:
     - Nodo Hoja (Regla FCA): '1' + bit_predicho (2 bits en total)
     - Nodo Interno: '0' + existe_hijo_0 + existe_hijo_1 (3 bits en total)
@@ -86,12 +94,92 @@ def costo_regla_estimado(w: str, b: int) -> int:
     return len(w) + BITS_PRED + math.ceil(math.log2(b + 1))
 
 
+# ---------------------------------------------------------------------------
+# CONTEXTO FORMAL (FCA) DE LA CADENA
+#
+#   Objetos   : las posiciones i = 0 .. n-b-1. Cada una tiene su contexto de
+#               b bits a la derecha (s[i+1 : i+1+b]) y el bit a predecir s[i].
+#   Atributos : "c{j}=v"  -> el j-ésimo bit del contexto vale v   (j<b, v∈{0,1})
+#               "y=v"     -> el bit a predecir vale v
+#
+#   Índices: c{j}=v -> 2*j + v      y=v -> 2*b + v
+#
+# Una regla exacta "el contexto empieza por w  ->  y = x" es la implicación FCA
+#       {c0=w0, ..., c(m-1)=w(m-1)}  ->  {y=x}
+# y se cumple  <=>  extent(premisa) ⊆ ext[y=x]  <=>  (y=x) ∈ closure(premisa).
+# ---------------------------------------------------------------------------
+def construir_contexto_fca(s: str, b: int) -> FormalContext:
+    assert BITS_PRED == 1, "el contexto FCA asume BITS_PRED = 1"
+    n = len(s)
+    N = n - b                                           # n - b - BITS_PRED + 1
+    arr = np.frombuffer(s.encode("ascii"), dtype=np.uint8) == ord("1")
+    W = sliding_window_view(arr, b + 1)                 # (N, b+1): W[i] = s[i : i+b+1]
+
+    M = np.empty((N, 2 * b + 2), dtype=bool)
+    ctx = W[:, 1:]                                      # bits del contexto
+    M[:, 0:2 * b:2] = ~ctx                              # c{j}=0
+    M[:, 1:2 * b:2] = ctx                               # c{j}=1
+    M[:, 2 * b] = ~W[:, 0]                              # y=0
+    M[:, 2 * b + 1] = W[:, 0]                           # y=1
+
+    cols = [f"c{j}={v}" for j in range(b) for v in (0, 1)] + ["y=0", "y=1"]
+    return FormalContext(pd.DataFrame(M, columns=cols))
+
+
+def extraer_reglas_fca(s: str, b: int, fc: Optional[FormalContext] = None) -> dict:
+    """Reglas exactas (implicaciones premisa -> y) calculadas sobre el FormalContext.
+
+    Se recorre el árbol de prefijos del contexto llevando la EXTENSIÓN de la premisa
+    (extent): extent(B ∪ {c_m=v}) = extent(B) & ext[c_m=v]. Si todos los objetos de esa
+    extensión tienen el mismo y, la implicación premisa -> y es exacta y ese nodo ya no
+    se sigue expandiendo (sus descendientes serían redundantes, igual que antes).
+
+    Poda por rentabilidad: la frecuencia solo baja y el costo solo sube al profundizar,
+    así que un nodo con frecuencia <= costo no puede dar ninguna regla rentable debajo.
+    El resultado es idéntico a extraer_reglas_strings(), sin generar subcadenas.
+    """
+    n = len(s)
+    if b < 1 or n - b < 1:
+        return {}
+    if fc is None:
+        fc = construir_contexto_fca(s, b)
+
+    ext = fc.ext
+    y1 = ext[2 * b + 1]                                  # objetos con y=1
+    base = BITS_PRED + math.ceil(math.log2(b + 1))       # costo(w) = len(w) + base
+
+    reglas = {}
+    pila = [("", fc.full_obj)]                           # (prefijo w, extent de su premisa)
+    while pila:
+        w, e = pila.pop()
+        m = len(w)
+        for v in (0, 1):
+            e2 = e & ext[2 * m + v]
+            k = e2.bit_count()                           # frecuencia del prefijo w2
+            w2 = w + ("1" if v else "0")
+            if k <= len(w2) + base:
+                continue                                 # nunca será rentable (ni sus hijos)
+            n1 = (e2 & y1).bit_count()
+            if n1 == k:                                  # extent ⊆ ext[y=1]
+                reglas[w2] = "1"
+            elif n1 == 0:                                # extent ⊆ ext[y=0]
+                reglas[w2] = "0"
+            elif m + 1 < b:
+                pila.append((w2, e2))                    # no determinista: seguir bajando
+
+    return dict(sorted(reglas.items(), key=lambda kv: (len(kv[0]), kv[0])))
+
+
 def extraer_reglas_guigues_duquenne(s: str, b: int) -> dict:
-    """Extrae la base canónica de implicaciones exactas FCA mediante operaciones de extensión bitwise."""
+    """Nombre histórico: ahora las reglas se extraen sobre el contexto formal de FCA."""
+    return extraer_reglas_fca(s, b)
+
+
+def extraer_reglas_strings(s: str, b: int) -> dict:
+    """Versión anterior (sin FCA, con subcadenas). Solo como referencia para comparar."""
     n = len(s)
     N = n - b - BITS_PRED + 1
 
-    # Identificar patrones de contexto observados
     cuentas = {}
     for i in range(0, N):
         prev = s[i : i + BITS_PRED]
@@ -105,11 +193,8 @@ def extraer_reglas_guigues_duquenne(s: str, b: int) -> dict:
 
     for w in sorted(cuentas, key=lambda x: (len(x), x)):
         c = cuentas[w]
-        # Implicación exacta: solo una consecuencia observada (100% confianza)
         if len(c) > 1:
             continue
-
-        # Poda por Cierre FCA: Si un prefijo ya es regla exacta, este supercontexto es redundante
         if any(w[:k] in deterministicas for k in range(1, len(w))):
             continue
 
@@ -117,13 +202,71 @@ def extraer_reglas_guigues_duquenne(s: str, b: int) -> dict:
         prediccion = list(c.keys())[0]
         frecuencia = c[prediccion]
 
-        # Condición de rentabilidad
         if frecuencia > costo_regla_estimado(w, b):
             reglas[w] = prediccion
 
     return dict(sorted(reglas.items(), key=lambda kv: (len(kv[0]), kv[0])))
 
 
+# ----------------------------- verificaciones opcionales --------------------
+def _premisa(w: str) -> int:
+    B = 0
+    for j, c in enumerate(w):
+        B |= 1 << (2 * j + int(c))
+    return B
+
+
+def verificar_equivalencia(s: str, b: int) -> bool:
+    """Comprueba que la versión FCA y la versión con strings dan las mismas reglas."""
+    a = extraer_reglas_fca(s, b)
+    r = extraer_reglas_strings(s, b)
+    assert a == r, "las reglas FCA y las de strings difieren"
+    return True
+
+
+def validar_reglas_con_cierre(s: str, b: int, reglas: Optional[dict] = None,
+                              fc: Optional[FormalContext] = None) -> bool:
+    """Comprueba con fc.closure que cada regla es una implicación exacta del contexto."""
+    if fc is None:
+        fc = construir_contexto_fca(s, b)
+    if reglas is None:
+        reglas = extraer_reglas_fca(s, b, fc)
+    for w, x in reglas.items():
+        C = fc.closure(_premisa(w))
+        assert (C >> (2 * b + int(x))) & 1, f"regla inválida: {w} -> {x}"
+    return True
+
+
+def validar_con_base_gd(s: str, b: int, reglas: Optional[dict] = None) -> bool:
+    """Comprueba que cada regla se deriva de la base de Guigues-Duquenne REAL de tu
+    librería (guigues_duquenne(fc)).
+
+    Solo para cadenas cortas (p. ej. "01"*150 con b=8): la base completa sobre las
+    posiciones puede tener un número exponencial de implicaciones.
+    """
+    try:
+        from implications.guigues_duquenne import guigues_duquenne
+    except ImportError:
+        from guigues_duquenne import guigues_duquenne     # si está en otra carpeta
+    from implications.armstrong import ImplicationClosure
+
+    fc = construir_contexto_fca(s, b)
+    if reglas is None:
+        reglas = extraer_reglas_fca(s, b, fc)
+
+    base = guigues_duquenne(fc)
+    ic = ImplicationClosure()
+    for A, B in base:
+        ic.add(A, B)
+
+    for w, x in reglas.items():
+        assert (ic(_premisa(w)) >> (2 * b + int(x))) & 1, f"no se deriva de la base GD: {w} -> {x}"
+
+    print(f"Base GD: {len(base)} implicaciones | {len(reglas)} reglas derivadas de ella")
+    return True
+
+
+# ---------------------------------------------------------------------------
 def bit_deducido(contexto: str, reglas: dict, b: int):
     for m in range(1, b + 1):
         v = reglas.get(contexto[:m])
@@ -149,7 +292,7 @@ def codificar(s: str, b: int, reglas: dict):
 
 
 def evaluar(s: str, b: int):
-    reglas = extraer_reglas_guigues_duquenne(s, b)
+    reglas = extraer_reglas_fca(s, b)
     semilla, datos = codificar(s, b, reglas)
 
     # Empaquetamiento de la base de reglas FCA mediante Trie Binario
@@ -164,7 +307,7 @@ def evaluar(s: str, b: int):
 
 # ---------------------------------------------------------------------------
 # HÍBRIDO FCA:
-#  1) Reglas EXACTAS (base de Guigues-Duquenne, extraer_reglas_guigues_duquenne),
+#  1) Reglas EXACTAS (implicaciones del FormalContext, extraer_reglas_fca),
 #     empaquetadas en el Trie y transmitidas: los bits que deducen no se codifican.
 #  2) Implicaciones PARCIALES (Luxenburger): se aprenden de forma incremental durante
 #     la codificación/decodificación (nada que transmitir) para los bits no deducidos.
@@ -278,7 +421,7 @@ def codificar_aritmetico(s: str, b: int, reglas: dict) -> bytes:
 def empaquetar(s: str, b: int) -> dict:
     """Blob = semilla + Trie de reglas exactas (alineado a byte) + carga aritmética."""
     n = len(s)
-    reglas = extraer_reglas_guigues_duquenne(s, b)
+    reglas = extraer_reglas_fca(s, b)
     trie_bits = serializar_trie(construir_trie_reglas(reglas))
     carga = codificar_aritmetico(s, b, reglas)
     cab = s[n - b:] + trie_bits
@@ -398,10 +541,21 @@ def generar_decodificador(s: str, info: dict) -> str:
             .replace("@@MODELO@@", MODELO_SRC))
 
 
+def leer_bits(arg: str) -> str:
+    """Si arg es la ruta de un archivo, devuelve sus bytes como cadena de 0/1
+    (8 bits por byte, MSB primero). Si no, filtra arg como cadena de bits."""
+    if os.path.isfile(arg):
+        with open(arg, "rb") as f:
+            datos = f.read()
+        return (np.unpackbits(np.frombuffer(datos, dtype=np.uint8)) + 48).tobytes().decode("ascii")
+    return "".join(c for c in arg if c in "01")
+
+
 def main():
     if len(sys.argv) not in (2, 3):
-        sys.exit("Uso: python test.py BITS [BITS_CONTEXTO]")
-    s = "".join(c for c in sys.argv[1] if c in "01")
+        sys.exit("Uso: python hibrido.py BITS|ARCHIVO [BITS_CONTEXTO]")
+    es_archivo = os.path.isfile(sys.argv[1])
+    s = leer_bits(sys.argv[1])
     n = len(s)
     if n < 2 + BITS_PRED:
         sys.exit(f"Hacen falta al menos {2 + BITS_PRED} bits.")
@@ -411,12 +565,14 @@ def main():
     else:
         opciones = [b for b in (12, 16, 20, 24) if b <= n - 1] or [n - 1]
 
-    print(" b | reglas exactas | semilla | Trie | carga aritm. | cabecera | TOTAL (bits)")
+    print(" b | reglas exactas | semilla | Trie | carga aritm. | cabecera | TOTAL (bits) | seg")
     mejor = None
     for b in opciones:
+        t0 = time.perf_counter()
         info = empaquetar(s, b)
+        dt = time.perf_counter() - t0
         print(f"{b:2d} | {info['reglas']:14d} | {info['semilla']:7d} | {info['trie']:4d} | "
-              f"{info['carga']:12d} | {info['cabecera']:8d} | {info['total']}")
+              f"{info['carga']:12d} | {info['cabecera']:8d} | {info['total']} | {dt:.1f}")
         if mejor is None or info["total"] < mejor["total"]:
             mejor = info
 
@@ -424,11 +580,18 @@ def main():
           f"({mejor['total'] / n:.4f} del original de {n} bits)")
 
     codigo = generar_decodificador(s, mejor)
-    print("\n=== DECODIFICADOR GENERADO (copie desde INICIO hasta FIN, sin las marcas) ===")
-    print("########## INICIO DEL CÓDIGO ##########")
-    print(codigo)
-    print("########## FIN DEL CÓDIGO ##########")
-    print("Al ejecutarlo debe imprimir: VERIFICACION SHA-256: OK")
+    if es_archivo:
+        with open("decodificador.py", "w", encoding="utf-8") as f:
+            f.write(codigo)
+        print("\nDecodificador guardado en decodificador.py")
+        print("Al ejecutarlo debe imprimir: VERIFICACION SHA-256: OK")
+    else:
+        return 
+        print("\n=== DECODIFICADOR GENERADO (copie desde INICIO hasta FIN, sin las marcas) ===")
+        print("########## INICIO DEL CÓDIGO ##########")
+        print(codigo)
+        print("########## FIN DEL CÓDIGO ##########")
+        print("Al ejecutarlo debe imprimir: VERIFICACION SHA-256: OK")
 
 
 if __name__ == "__main__":
