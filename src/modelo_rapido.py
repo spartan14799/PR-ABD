@@ -1,6 +1,9 @@
 import sys
 import math
 from fca.context import FormalContext, bits
+import os
+import numpy as np
+
 
 BITS_PRED = 1
 
@@ -356,10 +359,38 @@ def cabecera_ref(n: int) -> int:
     return math.ceil(math.log2(n + 1)) + 5
 
 
+def extraer_texto_pdf(ruta: str) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        try:
+            from PyPDF2 import PdfReader
+        except ImportError:
+            sys.exit("Error: Instale 'pypdf' para extraer texto de archivos PDF (pip install pypdf).")
+
+    reader = PdfReader(ruta)
+    texto = "".join(page.extract_text() or "" for page in reader.pages)
+    return texto
+
+
+def leer_bits(arg: str) -> str:
+    if os.path.isfile(arg):
+        if arg.lower().endswith(".pdf"):
+            texto = extraer_texto_pdf(arg)
+            print(f"[PDF] Texto extraído: {len(texto)} caracteres")
+            datos = texto.encode("utf-8")
+        else:
+            with open(arg, "rb") as f:
+                datos = f.read()
+        return (np.unpackbits(np.frombuffer(datos, dtype=np.uint8)) + 48).tobytes().decode("ascii")
+    return "".join(c for c in arg if c in "01")
+
 def main():
     if len(sys.argv) not in (2, 3):
-        sys.exit("Uso: python test.py BITS [BITS_CONTEXTO]")
-    s = "".join(c for c in sys.argv[1] if c in "01")
+        sys.exit("Uso: python modelo_rapido.py BITS|ARCHIVO [BITS_CONTEXTO]")
+    
+    es_archivo = os.path.isfile(sys.argv[1])
+    s = leer_bits(sys.argv[1])
     n = len(s)
     if n < 2 + BITS_PRED:
         sys.exit(f"Hacen falta al menos {2 + BITS_PRED} bits.")
@@ -367,7 +398,7 @@ def main():
     if len(sys.argv) == 3:
         opciones = [int(sys.argv[2])]
     else:
-        opciones = [b for b in (12, 14, 15, 16, 17, 18, 19, 20, 24) if b <= n - 1] or [n - 1]
+        opciones = [b for b in range(12, 68, 4) if b <= n - 1] or [n - 1]
 
     print(" b | semilla | carga aritm. | cabecera | TOTAL (bits)")
     mejor = None
@@ -379,12 +410,16 @@ def main():
             mejor = info
 
     b = mejor["b"]
-    _, _, _, _, total_ex, _ = evaluar(s, b)
     print(f"\nElegido: b = {b} | total: {mejor['total']} bits "
           f"({mejor['total'] / n:.4f} del original {n} bits)")
-    print(f"Referencia reglas exactas (Trie) con el mismo b: {total_ex + cabecera_ref(n)} bits")
 
-#    codigo = generar_decodificador(s, mejor)
+    codigo = generar_decodificador(s, mejor)
+    if es_archivo:
+        with open("decodificador.py", "w", encoding="utf-8") as f:
+            f.write(codigo)
+        print("\nDecodificador guardado en decodificador.py")
+        print("Al ejecutarlo debe imprimir: VERIFICACION SHA-256: OK")
+
 
 if __name__ == "__main__":
     main()

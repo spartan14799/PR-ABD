@@ -3,6 +3,7 @@ import os
 import math
 import time
 from typing import Optional
+from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -21,7 +22,6 @@ class TrieNode:
 
 
 def construir_trie_reglas(reglas: dict) -> TrieNode:
-    """Construye un Trie binario a partir del conjunto de reglas exactas."""
     root = TrieNode()
     for w, pred in reglas.items():
         curr = root
@@ -34,12 +34,6 @@ def construir_trie_reglas(reglas: dict) -> TrieNode:
 
 
 def serializar_trie(root: TrieNode) -> str:
-    """Serializa el Trie en una cadena ultracompacta de bits.
-
-    Estructura por nodo:
-    - Nodo Hoja (Regla FCA): '1' + bit_predicho (2 bits en total)
-    - Nodo Interno: '0' + existe_hijo_0 + existe_hijo_1 (3 bits en total)
-    """
     bits_out = []
 
     def dfs(n):
@@ -62,7 +56,6 @@ def serializar_trie(root: TrieNode) -> str:
 
 
 def deserializar_trie(bitstr: str) -> dict:
-    """Reconstruye el diccionario de reglas a partir de la cabecera comprimida."""
     pos = 0
     reglas = {}
 
@@ -90,54 +83,28 @@ def deserializar_trie(bitstr: str) -> dict:
 
 
 def costo_regla_estimado(w: str, b: int) -> int:
-    """Costo individual usado para evaluar rentabilidad durante la búsqueda."""
     return len(w) + BITS_PRED + math.ceil(math.log2(b + 1))
 
 
-# ---------------------------------------------------------------------------
-# CONTEXTO FORMAL (FCA) DE LA CADENA
-#
-#   Objetos   : las posiciones i = 0 .. n-b-1. Cada una tiene su contexto de
-#               b bits a la derecha (s[i+1 : i+1+b]) y el bit a predecir s[i].
-#   Atributos : "c{j}=v"  -> el j-ésimo bit del contexto vale v   (j<b, v∈{0,1})
-#               "y=v"     -> el bit a predecir vale v
-#
-#   Índices: c{j}=v -> 2*j + v      y=v -> 2*b + v
-#
-# Una regla exacta "el contexto empieza por w  ->  y = x" es la implicación FCA
-#       {c0=w0, ..., c(m-1)=w(m-1)}  ->  {y=x}
-# y se cumple  <=>  extent(premisa) ⊆ ext[y=x]  <=>  (y=x) ∈ closure(premisa).
-# ---------------------------------------------------------------------------
 def construir_contexto_fca(s: str, b: int) -> FormalContext:
     assert BITS_PRED == 1, "el contexto FCA asume BITS_PRED = 1"
     n = len(s)
-    N = n - b                                           # n - b - BITS_PRED + 1
+    N = n - b
     arr = np.frombuffer(s.encode("ascii"), dtype=np.uint8) == ord("1")
-    W = sliding_window_view(arr, b + 1)                 # (N, b+1): W[i] = s[i : i+b+1]
+    W = sliding_window_view(arr, b + 1)
 
     M = np.empty((N, 2 * b + 2), dtype=bool)
-    ctx = W[:, 1:]                                      # bits del contexto
-    M[:, 0:2 * b:2] = ~ctx                              # c{j}=0
-    M[:, 1:2 * b:2] = ctx                               # c{j}=1
-    M[:, 2 * b] = ~W[:, 0]                              # y=0
-    M[:, 2 * b + 1] = W[:, 0]                           # y=1
+    ctx = W[:, 1:]
+    M[:, 0:2 * b:2] = ~ctx
+    M[:, 1:2 * b:2] = ctx
+    M[:, 2 * b] = ~W[:, 0]
+    M[:, 2 * b + 1] = W[:, 0]
 
     cols = [f"c{j}={v}" for j in range(b) for v in (0, 1)] + ["y=0", "y=1"]
     return FormalContext(pd.DataFrame(M, columns=cols))
 
 
 def extraer_reglas_fca(s: str, b: int, fc: Optional[FormalContext] = None) -> dict:
-    """Reglas exactas (implicaciones premisa -> y) calculadas sobre el FormalContext.
-
-    Se recorre el árbol de prefijos del contexto llevando la EXTENSIÓN de la premisa
-    (extent): extent(B ∪ {c_m=v}) = extent(B) & ext[c_m=v]. Si todos los objetos de esa
-    extensión tienen el mismo y, la implicación premisa -> y es exacta y ese nodo ya no
-    se sigue expandiendo (sus descendientes serían redundantes, igual que antes).
-
-    Poda por rentabilidad: la frecuencia solo baja y el costo solo sube al profundizar,
-    así que un nodo con frecuencia <= costo no puede dar ninguna regla rentable debajo.
-    El resultado es idéntico a extraer_reglas_strings(), sin generar subcadenas.
-    """
     n = len(s)
     if b < 1 or n - b < 1:
         return {}
@@ -145,173 +112,31 @@ def extraer_reglas_fca(s: str, b: int, fc: Optional[FormalContext] = None) -> di
         fc = construir_contexto_fca(s, b)
 
     ext = fc.ext
-    y1 = ext[2 * b + 1]                                  # objetos con y=1
-    base = BITS_PRED + math.ceil(math.log2(b + 1))       # costo(w) = len(w) + base
+    y1 = ext[2 * b + 1]
+    base = BITS_PRED + math.ceil(math.log2(b + 1))
 
     reglas = {}
-    pila = [("", fc.full_obj)]                           # (prefijo w, extent de su premisa)
+    pila = [("", fc.full_obj)]
     while pila:
         w, e = pila.pop()
         m = len(w)
         for v in (0, 1):
             e2 = e & ext[2 * m + v]
-            k = e2.bit_count()                           # frecuencia del prefijo w2
+            k = e2.bit_count()
             w2 = w + ("1" if v else "0")
             if k <= len(w2) + base:
-                continue                                 # nunca será rentable (ni sus hijos)
+                continue
             n1 = (e2 & y1).bit_count()
-            if n1 == k:                                  # extent ⊆ ext[y=1]
+            if n1 == k:
                 reglas[w2] = "1"
-            elif n1 == 0:                                # extent ⊆ ext[y=0]
+            elif n1 == 0:
                 reglas[w2] = "0"
             elif m + 1 < b:
-                pila.append((w2, e2))                    # no determinista: seguir bajando
+                pila.append((w2, e2))
 
     return dict(sorted(reglas.items(), key=lambda kv: (len(kv[0]), kv[0])))
 
 
-def extraer_reglas_guigues_duquenne(s: str, b: int) -> dict:
-    """Nombre histórico: ahora las reglas se extraen sobre el contexto formal de FCA."""
-    return extraer_reglas_fca(s, b)
-
-
-def extraer_reglas_strings(s: str, b: int) -> dict:
-    """Versión anterior (sin FCA, con subcadenas). Solo como referencia para comparar."""
-    n = len(s)
-    N = n - b - BITS_PRED + 1
-
-    cuentas = {}
-    for i in range(0, N):
-        prev = s[i : i + BITS_PRED]
-        for m in range(1, b + 1):
-            w = s[i + BITS_PRED : i + BITS_PRED + m]
-            c = cuentas.setdefault(w, {})
-            c[prev] = c.get(prev, 0) + 1
-
-    deterministicas = set()
-    reglas = {}
-
-    for w in sorted(cuentas, key=lambda x: (len(x), x)):
-        c = cuentas[w]
-        if len(c) > 1:
-            continue
-        if any(w[:k] in deterministicas for k in range(1, len(w))):
-            continue
-
-        deterministicas.add(w)
-        prediccion = list(c.keys())[0]
-        frecuencia = c[prediccion]
-
-        if frecuencia > costo_regla_estimado(w, b):
-            reglas[w] = prediccion
-
-    return dict(sorted(reglas.items(), key=lambda kv: (len(kv[0]), kv[0])))
-
-
-# ----------------------------- verificaciones opcionales --------------------
-def _premisa(w: str) -> int:
-    B = 0
-    for j, c in enumerate(w):
-        B |= 1 << (2 * j + int(c))
-    return B
-
-
-def verificar_equivalencia(s: str, b: int) -> bool:
-    """Comprueba que la versión FCA y la versión con strings dan las mismas reglas."""
-    a = extraer_reglas_fca(s, b)
-    r = extraer_reglas_strings(s, b)
-    assert a == r, "las reglas FCA y las de strings difieren"
-    return True
-
-
-def validar_reglas_con_cierre(s: str, b: int, reglas: Optional[dict] = None,
-                              fc: Optional[FormalContext] = None) -> bool:
-    """Comprueba con fc.closure que cada regla es una implicación exacta del contexto."""
-    if fc is None:
-        fc = construir_contexto_fca(s, b)
-    if reglas is None:
-        reglas = extraer_reglas_fca(s, b, fc)
-    for w, x in reglas.items():
-        C = fc.closure(_premisa(w))
-        assert (C >> (2 * b + int(x))) & 1, f"regla inválida: {w} -> {x}"
-    return True
-
-
-def validar_con_base_gd(s: str, b: int, reglas: Optional[dict] = None) -> bool:
-    """Comprueba que cada regla se deriva de la base de Guigues-Duquenne REAL de tu
-    librería (guigues_duquenne(fc)).
-
-    Solo para cadenas cortas (p. ej. "01"*150 con b=8): la base completa sobre las
-    posiciones puede tener un número exponencial de implicaciones.
-    """
-    try:
-        from implications.guigues_duquenne import guigues_duquenne
-    except ImportError:
-        from guigues_duquenne import guigues_duquenne     # si está en otra carpeta
-    from implications.armstrong import ImplicationClosure
-
-    fc = construir_contexto_fca(s, b)
-    if reglas is None:
-        reglas = extraer_reglas_fca(s, b, fc)
-
-    base = guigues_duquenne(fc)
-    ic = ImplicationClosure()
-    for A, B in base:
-        ic.add(A, B)
-
-    for w, x in reglas.items():
-        assert (ic(_premisa(w)) >> (2 * b + int(x))) & 1, f"no se deriva de la base GD: {w} -> {x}"
-
-    print(f"Base GD: {len(base)} implicaciones | {len(reglas)} reglas derivadas de ella")
-    return True
-
-
-# ---------------------------------------------------------------------------
-def bit_deducido(contexto: str, reglas: dict, b: int):
-    for m in range(1, b + 1):
-        v = reglas.get(contexto[:m])
-        if v is not None:
-            return v
-    return None
-
-
-def codificar(s: str, b: int, reglas: dict):
-    n = len(s)
-    datos = []
-    i = n - b - BITS_PRED
-    while i >= 0:
-        v = bit_deducido(s[i + BITS_PRED : i + BITS_PRED + b], reglas, b)
-        if v is None:
-            datos.append(s[i : i + BITS_PRED])
-        i -= BITS_PRED
-
-    if i < -1:
-        datos.append(s[0 : i + BITS_PRED])
-
-    return s[n - b :], "".join(datos)
-
-
-def evaluar(s: str, b: int):
-    reglas = extraer_reglas_fca(s, b)
-    semilla, datos = codificar(s, b, reglas)
-
-    # Empaquetamiento de la base de reglas FCA mediante Trie Binario
-    trie_root = construir_trie_reglas(reglas)
-    trie_bits = serializar_trie(trie_root)
-    costo_reglas = len(trie_bits)
-
-    total_bits = len(semilla) + len(datos) + costo_reglas
-    return reglas, semilla, datos, costo_reglas, total_bits, trie_bits
-
-
-
-# ---------------------------------------------------------------------------
-# HÍBRIDO FCA:
-#  1) Reglas EXACTAS (implicaciones del FormalContext, extraer_reglas_fca),
-#     empaquetadas en el Trie y transmitidas: los bits que deducen no se codifican.
-#  2) Implicaciones PARCIALES (Luxenburger): se aprenden de forma incremental durante
-#     la codificación/decodificación (nada que transmitir) para los bits no deducidos.
-# ---------------------------------------------------------------------------
 MODELO_SRC = '''def deducido(contexto, reglas, b):
     for m in range(1, b + 1):
         v = reglas.get(contexto[:m])
@@ -360,8 +185,6 @@ exec(MODELO_SRC)
 
 
 def codificar_aritmetico(s: str, b: int, reglas: dict) -> bytes:
-    """Codificador de rango binario (estilo LZMA). Los bits deducidos por reglas exactas
-    no se codifican; los demás usan las implicaciones parciales aprendidas."""
     n = len(s)
     M = Modelo(b)
     out = bytearray()
@@ -419,7 +242,6 @@ def codificar_aritmetico(s: str, b: int, reglas: dict) -> bytes:
 
 
 def empaquetar(s: str, b: int) -> dict:
-    """Blob = semilla + Trie de reglas exactas (alineado a byte) + carga aritmética."""
     n = len(s)
     reglas = extraer_reglas_fca(s, b)
     trie_bits = serializar_trie(construir_trie_reglas(reglas))
@@ -433,8 +255,17 @@ def empaquetar(s: str, b: int) -> dict:
                 carga=8 * len(carga), cabecera=cabecera, total=cabecera + 8 * len(blob))
 
 
+def _evaluar_worker(args):
+    """Worker global para paralelizar en múltiples núcleos."""
+    s, b = args
+    t0 = time.perf_counter()
+    info = empaquetar(s, b)
+    dt = time.perf_counter() - t0
+    info["dt"] = dt
+    return info
+
+
 _PLANTILLA_DECODIFICADOR = '''# Decodificador autogenerado: reconstruye la cadena de bits original.
-# Metodo: reglas FCA exactas (Trie) + implicaciones parciales aprendidas + codificacion aritmetica.
 import base64
 import hashlib
 
@@ -527,7 +358,6 @@ if __name__ == "__main__":
 
 
 def generar_decodificador(s: str, info: dict) -> str:
-    """Texto de un programa Python autónomo que regenera 's' y verifica su SHA-256."""
     import base64
     import hashlib
     b64 = base64.b64encode(info["blob"]).decode()
@@ -541,19 +371,50 @@ def generar_decodificador(s: str, info: dict) -> str:
             .replace("@@MODELO@@", MODELO_SRC))
 
 
+def extraer_texto_pdf(ruta: str) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        try:
+            from PyPDF2 import PdfReader
+        except ImportError:
+            sys.exit("Error: Instale 'pypdf' para extraer texto de archivos PDF (pip install pypdf).")
+
+    reader = PdfReader(ruta)
+    texto = "".join(page.extract_text() or "" for page in reader.pages)
+    return texto
+
+
 def leer_bits(arg: str) -> str:
-    """Si arg es la ruta de un archivo, devuelve sus bytes como cadena de 0/1
-    (8 bits por byte, MSB primero). Si no, filtra arg como cadena de bits."""
     if os.path.isfile(arg):
-        with open(arg, "rb") as f:
-            datos = f.read()
+        if arg.lower().endswith(".pdf"):
+            texto = extraer_texto_pdf(arg)
+            print(f"[PDF] Texto extraído: {len(texto)} caracteres")
+            datos = texto.encode("utf-8")
+        else:
+            with open(arg, "rb") as f:
+                datos = f.read()
         return (np.unpackbits(np.frombuffer(datos, dtype=np.uint8)) + 48).tobytes().decode("ascii")
     return "".join(c for c in arg if c in "01")
+
+
+def obtener_rango_optimo(n: int) -> list[int]:
+    """Calcula la ventana de candidatos óptima b basada en log2(N)."""
+    log_n = int(math.log2(n))
+    b_min = max(4, log_n - 2)
+    b_max = min(n - 1, log_n + 16)
+    
+    # Muestreo con paso 4 dentro de la cota logarítmica
+    rango = list(range(b_min, b_max + 1, 4))
+    if not rango:
+        rango = [max(2, n - 1)]
+    return rango
 
 
 def main():
     if len(sys.argv) not in (2, 3):
         sys.exit("Uso: python hibrido.py BITS|ARCHIVO [BITS_CONTEXTO]")
+    
     es_archivo = os.path.isfile(sys.argv[1])
     s = leer_bits(sys.argv[1])
     n = len(s)
@@ -563,18 +424,21 @@ def main():
     if len(sys.argv) == 3:
         opciones = [int(sys.argv[2])]
     else:
-        opciones = [b for b in (12, 16, 20, 24) if b <= n - 1] or [n - 1]
+        opciones = obtener_rango_optimo(n)
 
+    print(f"Búsqueda por Rango Inteligente (log2 N = {int(math.log2(n))}): evaluando {len(opciones)} candidatos {opciones}")
     print(" b | reglas exactas | semilla | Trie | carga aritm. | cabecera | TOTAL (bits) | seg")
+    
     mejor = None
-    for b in opciones:
-        t0 = time.perf_counter()
-        info = empaquetar(s, b)
-        dt = time.perf_counter() - t0
-        print(f"{b:2d} | {info['reglas']:14d} | {info['semilla']:7d} | {info['trie']:4d} | "
-              f"{info['carga']:12d} | {info['cabecera']:8d} | {info['total']} | {dt:.1f}")
-        if mejor is None or info["total"] < mejor["total"]:
-            mejor = info
+    
+    # Paralelización utilizando los núcleos de la CPU
+    with ProcessPoolExecutor() as executor:
+        resultados = executor.map(_evaluar_worker, [(s, b) for b in opciones])
+        for info in resultados:
+            print(f"{info['b']:2d} | {info['reglas']:14d} | {info['semilla']:7d} | {info['trie']:4d} | "
+                  f"{info['carga']:12d} | {info['cabecera']:8d} | {info['total']} | {info['dt']:.2f}")
+            if mejor is None or info["total"] < mejor["total"]:
+                mejor = info
 
     print(f"\nElegido: b = {mejor['b']} | total: {mejor['total']} bits "
           f"({mejor['total'] / n:.4f} del original de {n} bits)")
@@ -584,13 +448,6 @@ def main():
         with open("decodificador.py", "w", encoding="utf-8") as f:
             f.write(codigo)
         print("\nDecodificador guardado en decodificador.py")
-        print("Al ejecutarlo debe imprimir: VERIFICACION SHA-256: OK")
-    else:
-        return 
-        print("\n=== DECODIFICADOR GENERADO (copie desde INICIO hasta FIN, sin las marcas) ===")
-        print("########## INICIO DEL CÓDIGO ##########")
-        print(codigo)
-        print("########## FIN DEL CÓDIGO ##########")
         print("Al ejecutarlo debe imprimir: VERIFICACION SHA-256: OK")
 
 
