@@ -1,3 +1,6 @@
 docs/teoria/teoria.*
 !docs/teoria/teoria.tex
 !docs/teoria/teoria.pdf
+.db_analisis/
+__pycache__/
+*.py[cod]
