@@ -1,6 +1,6 @@
 # `scaler.py` — Discretización y escalado conceptual
 
-> **Archivo:** [`src/preprocessing/scaler.py`](../../../src/preprocessing/scaler.py) · **Fase:** 1 — Preparación de datos · **Teoría:** [§1.2 a §1.4](../../teoria.md#sec-1-2)
+> **Archivo:** [`src/preprocessing/scaler.py`](../../../src/preprocessing/scaler.py) · **Fase:** 1 — Preparación de datos · **Teoría:** §1.2 a §1.4 de los [fundamentos teóricos](../../teoria/teoria.pdf)
 
 ## Propósito
 
@@ -13,7 +13,7 @@
 
 `discretize` delega en los otros dos módulos de la carpeta: [`quantiles.py`](quantiles.md) decide cuántos intervalos usar y [`cuant_type.py`](cuant_type.md) decide dónde cortar.
 
-Los ejemplos de este documento se ejecutan desde la raíz del repositorio, con `src/` como paquete de Python (la estructura del proyecto incluye los archivos `__init__.py`).
+Los ejemplos importan los módulos desde `src/`. Así funcionan en las pruebas, porque pytest agrega `src/` a la ruta de Python (lo configura `pyproject.toml`). En un notebook o un script hay que agregarla antes, por ejemplo con `import sys; sys.path.insert(0, "src")` si se ejecuta desde la raíz del repositorio. El mismo ejemplo se comprueba en `tests/test_preprocessing.py`.
 
 <a name="discretize"></a>
 
@@ -122,11 +122,11 @@ La escala interordinal (Observación 1.11), que permite describir intervalos, se
 
 ## Ejemplo completo
 
-Es el ejemplo de la [§1.6 de la teoría](../../teoria.md#sec-1-6), ejecutado con el código:
+Es el ejemplo de la §1.6 de los [fundamentos teóricos](../../teoria/teoria.pdf), ejecutado con el código:
 
 ```python
 import pandas as pd
-from src.preprocessing.scaler import discretize, scaling
+from preprocessing.scaler import discretize, scaling
 
 df = pd.DataFrame(
     {"radio":       [12.0, 13.5, 20.1, 11.2, 17.8, 14.6],
@@ -162,7 +162,7 @@ print(K.astype(int).to_string())
 # g6         0         1         1           1           1           1              1              0
 ```
 
-`K` es la matriz de incidencia de un contexto con $\lvert G \rvert = 6$ objetos y $\lvert M \rvert = 8$ atributos. La [§1.6](../../teoria.md#sec-1-6) explica cómo leerla.
+`K` es la matriz de incidencia de un contexto con $\lvert G \rvert = 6$ objetos y $\lvert M \rvert = 8$ atributos. La §1.6 de la teoría explica cómo leerla.
 
 ## Antes de discretizar: qué columnas pasar
 

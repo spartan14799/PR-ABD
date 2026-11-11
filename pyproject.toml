@@ -1,0 +1,5 @@
+# Configuración de pytest: busca las pruebas en tests/ y agrega src/ a la ruta
+# de Python, para que las pruebas importen con `from fca.context import ...`.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

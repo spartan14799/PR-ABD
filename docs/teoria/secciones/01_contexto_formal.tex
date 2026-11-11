@@ -316,7 +316,7 @@ Por eso, una vez que el algoritmo converge, basta con cortar en los puntos medio
 \subsection{Número de intervalos}
 \label{sec:numero-intervalos}
 
-Los tres métodos necesitan el número~$k$ de intervalos. Con pocos intervalos se pierden distinciones entre objetos (Corolario~\ref{cor:filas}); con muchos, el contexto tiene más atributos, cada uno con menos objetos, y el número de conceptos puede crecer mucho, que es justamente el problema que llevó a descartar el dataset de Spotify. Las reglas de esta sección vienen de la teoría de histogramas: eligen $k$ para que el histograma estime bien la densidad de la variable.
+Los tres métodos necesitan el número~$k$ de intervalos. Con pocos intervalos se pierden distinciones entre objetos (Corolario~\ref{cor:filas}); con muchos, el contexto tiene más atributos, cada uno con menos objetos, y el número de conceptos puede crecer mucho, que es justamente el principal reto del dataset de Spotify. Las reglas de esta sección vienen de la teoría de histogramas: eligen $k$ para que el histograma estime bien la densidad de la variable.
 
 \begin{regla}[\cite{sturges1926}]\label{regla:sturges}
 $k = \lceil \log_2 n \rceil + 1$.

@@ -128,9 +128,11 @@ Radio de los seis objetos del ejemplo de la §1.6 de los [fundamentos teóricos]
 
 Con igual ancho, $g_2$ queda con los valores pequeños; con igual frecuencia y con k-medias queda en el intervalo central. Igual frecuencia deja exactamente dos objetos por intervalo, como predice la Proposición 1.22 con $n/k = 2$. k-medias converge en dos iteraciones: los centroides iniciales son 12.375, 14.05 y 17.0, y los finales 11.6, 14.05 y 18.95, cuyos puntos medios son los cortes de la tabla.
 
+Los ejemplos importan los módulos desde `src/`. Así funcionan en las pruebas, porque pytest agrega `src/` a la ruta de Python (lo configura `pyproject.toml`). En un notebook o un script hay que agregarla antes, por ejemplo con `import sys; sys.path.insert(0, "src")` si se ejecuta desde la raíz del repositorio. El mismo ejemplo se comprueba en `tests/test_preprocessing.py`.
+
 ```python
 import pandas as pd
-from src.preprocessing.cuant_type import cut_methods
+from preprocessing.cuant_type import cut_methods
 
 radio = pd.Series([12.0, 13.5, 20.1, 11.2, 17.8, 14.6])
 for nombre, cortar in cut_methods.items():

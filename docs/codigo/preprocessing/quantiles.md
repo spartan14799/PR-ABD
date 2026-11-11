@@ -138,9 +138,11 @@ Las tres reglas se diseñaron para histogramas de igual ancho. Usarlas para eleg
 
 ## Ejemplo
 
+Los ejemplos importan los módulos desde `src/`. Así funcionan en las pruebas, porque pytest agrega `src/` a la ruta de Python (lo configura `pyproject.toml`). En un notebook o un script hay que agregarla antes, por ejemplo con `import sys; sys.path.insert(0, "src")` si se ejecuta desde la raíz del repositorio. El mismo ejemplo se comprueba en `tests/test_preprocessing.py`.
+
 ```python
 import pandas as pd
-from src.preprocessing.quantiles import methods
+from preprocessing.quantiles import methods
 
 radio = pd.Series([12.0, 13.5, 20.1, 11.2, 17.8, 14.6])
 print({nombre: regla(radio) for nombre, regla in methods.items()})
