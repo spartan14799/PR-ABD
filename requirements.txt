@@ -1,4 +1,6 @@
 # Requiere Python 3.10 o superior.
 numpy>=1.24
 pandas>=2.0
+matplotlib>=3.5
 pytest>=7.0
+
