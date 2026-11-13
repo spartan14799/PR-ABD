@@ -46,10 +46,13 @@ def serializar_trie(root: TrieNode) -> str:
             has_1 = '1' if '1' in n.children else '0'
             bits_out.append(has_0)
             bits_out.append(has_1)
+            bits_out.append('1' if '*' in n.children else '0')
             if '0' in n.children:
                 dfs(n.children['0'])
             if '1' in n.children:
                 dfs(n.children['1'])
+            if '*' in n.children:
+                dfs(n.children['*'])
 
     dfs(root)
     return "".join(bits_out)
@@ -72,11 +75,14 @@ def deserializar_trie(bitstr: str) -> dict:
         else:
             has_0 = bitstr[pos]
             has_1 = bitstr[pos + 1]
-            pos += 2
+            has_any = bitstr[pos + 2]
+            pos += 3
             if has_0 == '1':
                 dfs(current_w + '0')
             if has_1 == '1':
                 dfs(current_w + '1')
+            if has_any == '1':
+                dfs(current_w + '*')
 
     dfs("")
     return reglas
@@ -104,7 +110,7 @@ def construir_contexto_fca(s: str, b: int) -> FormalContext:
     return FormalContext(pd.DataFrame(M, columns=cols))
 
 
-def extraer_reglas_fca(s: str, b: int, fc: Optional[FormalContext] = None) -> dict:
+def extraer_reglas_prefijos(s: str, b: int, fc: Optional[FormalContext] = None) -> dict:
     n = len(s)
     if b < 1 or n - b < 1:
         return {}
@@ -137,10 +143,51 @@ def extraer_reglas_fca(s: str, b: int, fc: Optional[FormalContext] = None) -> di
     return dict(sorted(reglas.items(), key=lambda kv: (len(kv[0]), kv[0])))
 
 
+def extraer_reglas_fca(s: str, b: int, fc: Optional[FormalContext] = None) -> dict:
+    if b < 1 or len(s) <= b:
+        return {}
+    if fc is None:
+        fc = construir_contexto_fca(s, b)
+
+    reglas = extraer_reglas_prefijos(s, b, fc)
+    y1 = fc.ext[2 * b + 1]
+    frontera = [((), fc.full_obj, 0)]
+
+    for profundidad in range(min(b, 3) + 1):
+        siguientes = []
+        for premisa, e, inicio in frontera:
+            k = e.bit_count()
+            n1 = (e & y1).bit_count()
+            if n1 == 0 or n1 == k:
+                ancho = premisa[-1][0] + 1 if premisa else 0
+                w = ['*'] * ancho
+                for j, v in premisa:
+                    w[j] = str(v)
+                reglas[''.join(w)] = '1' if n1 else '0'
+                continue
+            if profundidad == min(b, 3):
+                continue
+            for j in range(inicio, b):
+                for v in (0, 1):
+                    e2 = e & fc.ext[2 * j + v]
+                    if e2:
+                        siguientes.append((premisa + ((j, v),), e2, j + 1))
+
+        def prioridad(item):
+            premisa, e, _ = item
+            k = e.bit_count()
+            n1 = (e & y1).bit_count()
+            return (min(n1, k - n1) / k, -k, premisa)
+
+        siguientes.sort(key=prioridad)
+        frontera = siguientes[:64]
+
+    return dict(sorted(reglas.items(), key=lambda kv: (len(kv[0]), kv[0])))
+
+
 MODELO_SRC = '''def deducido(contexto, reglas, b):
-    for m in range(1, b + 1):
-        v = reglas.get(contexto[:m])
-        if v is not None:
+    for w, v in reglas.items():
+        if all(bit == '*' or bit == contexto[j] for j, bit in enumerate(w)):
             return v
     return None
 
@@ -241,9 +288,8 @@ def codificar_aritmetico(s: str, b: int, reglas: dict) -> bytes:
     return bytes(res)
 
 
-def empaquetar(s: str, b: int) -> dict:
+def evaluar_reglas(s: str, b: int, reglas: dict) -> dict:
     n = len(s)
-    reglas = extraer_reglas_fca(s, b)
     trie_bits = serializar_trie(construir_trie_reglas(reglas))
     carga = codificar_aritmetico(s, b, reglas)
     cab = s[n - b:] + trie_bits
@@ -253,6 +299,78 @@ def empaquetar(s: str, b: int) -> dict:
     cabecera = math.ceil(math.log2(n + 1)) + max(5, b.bit_length())
     return dict(b=b, blob=blob, reglas=len(reglas), semilla=b, trie=len(trie_bits),
                 carga=8 * len(carga), cabecera=cabecera, total=cabecera + 8 * len(blob))
+
+
+def seleccionar_reglas(s: str, b: int, candidatos: dict) -> tuple[dict, dict]:
+    reglas = {}
+    mejor = evaluar_reglas(s, b, reglas)
+    prefijos = extraer_reglas_prefijos(s, b)
+    info = evaluar_reglas(s, b, prefijos)
+    if info['total'] < mejor['total']:
+        reglas, mejor = prefijos, info
+
+    fc = construir_contexto_fca(s, b)
+    costos = [0.0] * (len(s) - b)
+    modelo = Modelo(b)
+    for i in range(len(s) - b - 1, -1, -1):
+        cb = s[i + 1:i + 1 + b]
+        bit = int(s[i])
+        est, pb = None, 0
+        if deducido(cb, reglas, b) is None:
+            p0, est, pb = modelo.probar(cb)
+            prob = p0 if bit == 0 else 65536 - p0
+            costos[i] = -math.log2(prob / 65536)
+        modelo.actualizar(cb, bit, est, pb)
+
+    def prioridad(w):
+        e = fc.full_obj
+        for j, bit in enumerate(w):
+            if bit != '*':
+                e &= fc.ext[2 * j + int(bit)]
+        costo = len(serializar_trie(construir_trie_reglas({w: candidatos[w]})))
+        ahorro = 0.0
+        while e:
+            bit = e & -e
+            ahorro += costos[bit.bit_length() - 1]
+            e ^= bit
+        return ahorro / costo
+
+    pendientes = sorted(candidatos, key=prioridad, reverse=True)[:32]
+    while pendientes:
+        elegida = None
+        for w in pendientes:
+            if w in reglas:
+                continue
+            prueba = dict(reglas)
+            prueba[w] = candidatos[w]
+            info = evaluar_reglas(s, b, prueba)
+            if info['total'] < mejor['total']:
+                elegida = w
+                nuevas, mejor = prueba, info
+        if elegida is None:
+            break
+        reglas = nuevas
+        pendientes.remove(elegida)
+
+    cambio = True
+    while cambio:
+        cambio = False
+        for w in list(reglas):
+            prueba = {k: v for k, v in reglas.items() if k != w}
+            info = evaluar_reglas(s, b, prueba)
+            if info['total'] < mejor['total']:
+                reglas, mejor = prueba, info
+                cambio = True
+
+    return reglas, mejor
+
+
+def empaquetar(s: str, b: int) -> dict:
+    if not 1 <= b < len(s):
+        raise ValueError("El contexto debe estar entre 1 y len(s) - 1")
+    candidatos = extraer_reglas_fca(s, b)
+    _, info = seleccionar_reglas(s, b, candidatos)
+    return info
 
 
 def _evaluar_worker(args):
@@ -299,10 +417,13 @@ def reconstruir():
         else:
             h0 = leer(1)
             h1 = leer(1)
+            h_any = leer(1)
             if h0:
                 trie(w + "0")
             if h1:
                 trie(w + "1")
+            if h_any:
+                trie(w + "*")
 
     trie("")
     carga = data[(pos + 7) >> 3:]
