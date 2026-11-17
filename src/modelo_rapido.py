@@ -1,425 +1,355 @@
-import sys
+"""Implicaciones probabilísticas por bloques, filtro MDL y codificación sin pérdida.
+
+Cada tabla transmite P(bit=0 | posiciones siguientes). Las posiciones pueden
+omitirse: las reglas admiten excepciones, que codifica el flujo aritmético.
+El filtro estima el costo completo y solo codifica su mejor candidato.
+Formato MR01 independiente de hibrido.py; NumPy solo se necesita al comprimir.
+"""
+import argparse
+import base64
+import inspect
 import math
-from fca.context import FormalContext, bits
-import os
+from pathlib import Path
+import time
+import zlib
+
 import numpy as np
 
-
-BITS_PRED = 1
-
-
-class TrieNode:
-    """Nodo para la estructura Trie de reglas exactas FCA."""
-    def __init__(self):
-        self.children = {}
-        self.rule = None
+MAGIC = b'MR\x01'
 
 
-def construir_trie_reglas(reglas: dict) -> TrieNode:
-    """Construye un Trie binario a partir del conjunto de reglas exactas."""
-    root = TrieNode()
-    for w, pred in reglas.items():
-        curr = root
-        for bit in w:
-            if bit not in curr.children:
-                curr.children[bit] = TrieNode()
-            curr = curr.children[bit]
-        curr.rule = pred
-    return root
+def _entero(n):
+    salida = bytearray()
+    while n >= 128:
+        salida.append((n & 127) | 128)
+        n >>= 7
+    salida.append(n)
+    return bytes(salida)
 
 
-def serializar_trie(root: TrieNode) -> str:
-    """Serializa el Trie en una cadena ultracompacta de bits.
-    
-    Estructura por nodo:
-    - Nodo Hoja (Regla FCA): '1' + bit_predicho (2 bits en total)
-    - Nodo Interno: '0' + existe_hijo_0 + existe_hijo_1 (3 bits en total)
-    """
-    bits_out = []
-
-    def dfs(n):
-        if n.rule is not None:
-            bits_out.append('1')
-            bits_out.append(n.rule)
-        else:
-            bits_out.append('0')
-            has_0 = '1' if '0' in n.children else '0'
-            has_1 = '1' if '1' in n.children else '0'
-            bits_out.append(has_0)
-            bits_out.append(has_1)
-            if '0' in n.children:
-                dfs(n.children['0'])
-            if '1' in n.children:
-                dfs(n.children['1'])
-
-    dfs(root)
-    return "".join(bits_out)
+def _bits_bytes(s):
+    return int(s.ljust((len(s) + 7) // 8 * 8, '0') or '0', 2).to_bytes((len(s) + 7) // 8, 'big')
 
 
-def deserializar_trie(bitstr: str) -> dict:
-    """Reconstruye el diccionario de reglas a partir de la cabecera comprimida."""
-    pos = 0
-    reglas = {}
-
-    def dfs(current_w):
-        nonlocal pos
-        if pos >= len(bitstr):
-            return
-        is_rule = bitstr[pos]
-        pos += 1
-        if is_rule == '1':
-            target = bitstr[pos]
-            pos += 1
-            reglas[current_w] = target
-        else:
-            has_0 = bitstr[pos]
-            has_1 = bitstr[pos + 1]
-            pos += 2
-            if has_0 == '1':
-                dfs(current_w + '0')
-            if has_1 == '1':
-                dfs(current_w + '1')
-
-    dfs("")
-    return reglas
+def _bytes_bits(datos, n):
+    return ''.join(format(v, '08b') for v in datos)[:n]
 
 
-def costo_regla_estimado(w: str, b: int) -> int:
-    """Costo individual usado para evaluar rentabilidad durante la búsqueda."""
-    return len(w) + BITS_PRED + math.ceil(math.log2(b + 1))
+def _registro(modo, carga):
+    return bytes([modo]) + _entero(len(carga)) + carga
 
 
-def extraer_reglas_guigues_duquenne(s: str, b: int) -> dict:
-    """Extrae la base canónica de implicaciones exactas FCA mediante operaciones de extensión bitwise."""
-    n = len(s)
-    N = n - b - BITS_PRED + 1
-
-    # Identificar patrones de contexto observados
-    cuentas = {}
-    for i in range(0, N):
-        prev = s[i : i + BITS_PRED]
-        for m in range(1, b + 1):
-            w = s[i + BITS_PRED : i + BITS_PRED + m]
-            c = cuentas.setdefault(w, {})
-            c[prev] = c.get(prev, 0) + 1
-
-    deterministicas = set()
-    reglas = {}
-
-    for w in sorted(cuentas, key=lambda x: (len(x), x)):
-        c = cuentas[w]
-        # Implicación exacta: solo una consecuencia observada (100% confianza)
-        if len(c) > 1:
-            continue
-
-        # Poda por Cierre FCA: Si un prefijo ya es regla exacta, este supercontexto es redundante
-        if any(w[:k] in deterministicas for k in range(1, len(w))):
-            continue
-
-        deterministicas.add(w)
-        prediccion = list(c.keys())[0]
-        frecuencia = c[prediccion]
-
-        # Condición de rentabilidad
-        if frecuencia > costo_regla_estimado(w, b):
-            reglas[w] = prediccion
-
-    return dict(sorted(reglas.items(), key=lambda kv: (len(kv[0]), kv[0])))
-
-
-def bit_deducido(contexto: str, reglas: dict, b: int):
-    for m in range(1, b + 1):
-        v = reglas.get(contexto[:m])
-        if v is not None:
-            return v
-    return None
-
-
-def codificar(s: str, b: int, reglas: dict):
-    n = len(s)
-    datos = []
-    i = n - b - BITS_PRED
-    while i >= 0:
-        v = bit_deducido(s[i + BITS_PRED : i + BITS_PRED + b], reglas, b)
-        if v is None:
-            datos.append(s[i : i + BITS_PRED])
-        i -= BITS_PRED
-
-    if i < -1:
-        datos.append(s[0 : i + BITS_PRED])
-
-    return s[n - b :], "".join(datos)
-
-
-def evaluar(s: str, b: int):
-    reglas = extraer_reglas_guigues_duquenne(s, b)
-    semilla, datos = codificar(s, b, reglas)
-
-    # Empaquetamiento de la base de reglas FCA mediante Trie Binario
-    trie_root = construir_trie_reglas(reglas)
-    trie_bits = serializar_trie(trie_root)
-    costo_reglas = len(trie_bits)
-
-    total_bits = len(semilla) + len(datos) + costo_reglas
-    return reglas, semilla, datos, costo_reglas, total_bits, trie_bits
-
-
-
-# ---------------------------------------------------------------------------
-# COMPRESIÓN ADAPTATIVA: las implicaciones FCA (exactas y parciales) se aprenden
-# mientras se codifica/decodifica. No se transmite árbol ni reglas.
-# Contexto = siguientes m bits (m = 1..b); se usa el más largo ya visto, su bit
-# mayoritario es la "conclusión" y la confianza de esa implicación también se aprende.
-# ---------------------------------------------------------------------------
-MODELO_SRC = '''class Modelo:
-    def __init__(self, b):
-        self.b = b
-        self.cnt = {}
-        self.conf = {}
-
-    def probar(self, cb):
-        cnt = self.cnt
-        for m in range(self.b, 0, -1):
-            v = cnt.get(cb[:m])
-            if v:
-                n0 = v & 0xFFFFFFFF
-                n1 = v >> 32
-                pb = 1 if n1 >= n0 else 0
-                mn = n0 if pb else n1
-                clave = (m, min(n0 + n1, 5), min(mn, 2))
-                st = self.conf.get(clave)
-                if st is None:
-                    st = self.conf[clave] = [0, 0]
-                pr = (st[0] * 2 + 1) * 65536 // (st[1] * 2 + 2)
-                pr = min(max(pr, 64), 65472)
-                p1 = pr if pb else 65536 - pr
-                return 65536 - p1, st, pb
-        return 32768, None, 0
-
-    def actualizar(self, cb, bit, st, pb):
-        if st is not None:
-            st[1] += 1
-            if bit == pb:
-                st[0] += 1
-        cnt = self.cnt
-        inc = (1 << 32) if bit else 1
-        for m in range(1, self.b + 1):
-            k = cb[:m]
-            cnt[k] = cnt.get(k, 0) + inc
-'''
-exec(MODELO_SRC)
-
-
-def codificar_aritmetico(s: str, b: int) -> bytes:
-    """Codificador de rango binario (estilo LZMA); probabilidades del modelo adaptativo."""
-    n = len(s)
-    M = Modelo(b)
+def _codificar(eventos):
+    """Codificador de rango: cada evento contiene bit y P(0) en escala 65536."""
     out = bytearray()
-    st = {"low": 0, "rng": 0xFFFFFFFF, "cache": 0, "size": 1}
+    low, rng, cache, size = 0, 0xFFFFFFFF, 0, 1
 
     def shift_low():
-        low = st["low"]
+        nonlocal low, cache, size
         if low < 0xFF000000 or low > 0xFFFFFFFF:
             carry = low >> 32
-            temp = st["cache"]
+            temp = cache
             while True:
-                out.append((temp + carry) & 0xFF)
-                temp = 0xFF
-                st["size"] -= 1
-                if st["size"] == 0:
+                out.append((temp + carry) & 255)
+                temp = 255
+                size -= 1
+                if not size:
                     break
-            st["cache"] = (low >> 24) & 0xFF
-        st["size"] += 1
-        st["low"] = (low & 0x00FFFFFF) << 8
+            cache = (low >> 24) & 255
+        size += 1
+        low = (low & 0xFFFFFF) << 8
 
-    for i in range(n - b - 1, -1, -1):
-        cb = s[i + 1 : i + 1 + b]
-        p0, est, pb = M.probar(cb)
-        bit = 1 if s[i] == '1' else 0
-        bound = (st["rng"] >> 16) * p0
-        if bit == 0:
-            st["rng"] = bound
+    for bit, p0 in eventos:
+        bound = (rng >> 16) * p0
+        if bit:
+            low += bound
+            rng -= bound
         else:
-            st["low"] += bound
-            st["rng"] -= bound
-        while st["rng"] < (1 << 24):
-            st["rng"] <<= 8
+            rng = bound
+        while rng < (1 << 24):
+            rng <<= 8
             shift_low()
-        M.actualizar(cb, bit, est, pb)
-
-    low, rng = st["low"], st["rng"]
     hi = low + rng - 1
     for k in range(32, -1, -1):
         v = ((low + (1 << k) - 1) >> k) << k
         if v <= hi:
-            st["low"] = v
+            low = v
             break
     for _ in range(5):
         shift_low()
-
-    res = bytearray(out[1:])
-    while res and res[-1] == 0:
-        res.pop()
-    return bytes(res)
+    return bytes(out[1:]).rstrip(b'\x00')
 
 
-def empaquetar(s: str, b: int) -> dict:
-    """Blob = semilla (b bits, alineada a byte) + carga aritmética."""
-    n = len(s)
-    carga = codificar_aritmetico(s, b)
-    cab = s[n - b:]
-    pad = (-len(cab)) % 8
-    cab += "0" * pad
-    blob = int(cab, 2).to_bytes(len(cab) // 8, "big") + carga
-    cabecera = math.ceil(math.log2(n + 1)) + max(5, b.bit_length())
-    return dict(b=b, blob=blob, semilla=b, carga=8 * len(carga), cabecera=cabecera,
-                total=cabecera + 8 * len(blob))
+def _decodificar(carga, n, b):
+    if not carga:
+        raise ValueError('Modelo truncado')
+    k = carga[0]
+    if k > min(b, 8):
+        raise ValueError('Demasiadas posiciones')
+    posiciones = list(carga[1:1+k])
+    if len(posiciones) != k or posiciones != sorted(set(posiciones)) or any(j >= b for j in posiciones):
+        raise ValueError('Posiciones inválidas')
+    fin_tabla = 1 + k + (1 << k)
+    fin_semilla = fin_tabla + (b + 7) // 8
+    if len(carga) < fin_semilla:
+        raise ValueError('Tabla o semilla truncadas')
+    tabla = carga[1+k:fin_tabla]
+    if 0 in tabla:
+        raise ValueError('Probabilidad nula')
+    semilla = _bytes_bits(carga[fin_tabla:fin_semilla], b)
+    datos = carga[fin_semilla:]
+    ip = 0
 
-
-_PLANTILLA_DECODIFICADOR = '''# Decodificador autogenerado: reconstruye la cadena de bits original.
-# Metodo: implicaciones aprendidas de forma incremental + codificacion aritmetica.
-import base64
-import hashlib
-
-N = @@N@@
-B = @@B@@
-SHA256 = "@@SHA@@"
-BLOB = (
-@@BLOB@@
-)
-
-@@MODELO@@
-
-def reconstruir():
-    data = base64.b64decode(BLOB)
-    nb = (B + 7) // 8
-    semilla = "".join(format(x, "08b") for x in data[:nb])[:B]
-    carga = data[nb:]
-    pos = 0
-
-    def sig():
-        nonlocal pos
-        v = carga[pos] if pos < len(carga) else 0
-        pos += 1
+    def siguiente():
+        nonlocal ip
+        v = datos[ip] if ip < len(datos) else 0
+        ip += 1
         return v
 
     code = 0
     for _ in range(4):
-        code = (code << 8) | sig()
+        code = (code << 8) | siguiente()
     rng = 0xFFFFFFFF
-    M = Modelo(B)
+    contexto = int(semilla, 2)
     res = list(semilla[::-1])
-    for _ in range(N - B):
-        cb = "".join(res[-1:-B - 1:-1])
-        p0, est, pb = M.probar(cb)
-        bound = (rng >> 16) * p0
+    for _ in range(n-b):
+        indice = 0
+        for j in posiciones:
+            indice = (indice << 1) | ((contexto >> (b-j-1)) & 1)
+        bound = (rng >> 16) * (tabla[indice] << 8)
         if code < bound:
-            rng = bound
             bit = 0
+            rng = bound
         else:
+            bit = 1
             code -= bound
             rng -= bound
-            bit = 1
         while rng < (1 << 24):
             rng <<= 8
-            code = (code << 8) | sig()
-        M.actualizar(cb, bit, est, pb)
-        res.append("1" if bit else "0")
-    return "".join(reversed(res))
+            code = (code << 8) | siguiente()
+        res.append(str(bit))
+        contexto = (bit << (b-1)) | (contexto >> 1)
+    return ''.join(reversed(res))
 
 
-def main():
-    s = reconstruir()
-    ok = len(s) == N and hashlib.sha256(s.encode()).hexdigest() == SHA256
-    print("Bits reconstruidos:", len(s), "(esperados:", N, ")")
-    print("VERIFICACION SHA-256:", "OK - la cadena se reconstruye tal cual" if ok else "FALLO")
+def desempaquetar(paquete):
+    """Lee el contenedor completo y verifica CRC32 (corrupción accidental)."""
+    if not paquete.startswith(MAGIC):
+        raise ValueError('Formato o versión incorrectos')
+    pos = len(MAGIC)
 
+    def entero():
+        nonlocal pos
+        valor = 0
+        for desplazamiento in range(0, 70, 7):
+            if pos >= len(paquete):
+                raise ValueError('Cabecera truncada')
+            byte = paquete[pos]
+            pos += 1
+            valor |= (byte & 127) << desplazamiento
+            if byte < 128:
+                if desplazamiento and byte == 0:
+                    raise ValueError('Entero no canónico')
+                return valor
+        raise ValueError('Entero demasiado largo')
 
-if __name__ == "__main__":
-    main()
-'''
-
-
-def generar_decodificador(s: str, info: dict) -> str:
-    """Texto de un programa Python autónomo que regenera 's' y verifica su SHA-256."""
-    import base64
-    import hashlib
-    b64 = base64.b64encode(info["blob"]).decode()
-    lineas = ['    "' + b64[i:i + 76] + '"' for i in range(0, len(b64), 76)]
-    sha = hashlib.sha256(s.encode()).hexdigest()
-    return (_PLANTILLA_DECODIFICADOR
-            .replace("@@N@@", str(len(s)))
-            .replace("@@B@@", str(info["b"]))
-            .replace("@@SHA@@", sha)
-            .replace("@@BLOB@@", "\n".join(lineas))
-            .replace("@@MODELO@@", MODELO_SRC))
-
-
-def cabecera_ref(n: int) -> int:
-    return math.ceil(math.log2(n + 1)) + 5
-
-
-def extraer_texto_pdf(ruta: str) -> str:
-    try:
-        from pypdf import PdfReader
-    except ImportError:
-        try:
-            from PyPDF2 import PdfReader
-        except ImportError:
-            sys.exit("Error: Instale 'pypdf' para extraer texto de archivos PDF (pip install pypdf).")
-
-    reader = PdfReader(ruta)
-    texto = "".join(page.extract_text() or "" for page in reader.pages)
-    return texto
-
-
-def leer_bits(arg: str) -> str:
-    if os.path.isfile(arg):
-        if arg.lower().endswith(".pdf"):
-            texto = extraer_texto_pdf(arg)
-            print(f"[PDF] Texto extraído: {len(texto)} caracteres")
-            datos = texto.encode("utf-8")
+    n, b, bloque = entero(), entero(), entero()
+    if n < 1 or not 1 <= b <= 64 or bloque < 1:
+        raise ValueError('Parámetros inválidos')
+    if len(paquete) < pos + 4:
+        raise ValueError('CRC truncado')
+    crc = int.from_bytes(paquete[pos:pos+4], 'big')
+    pos += 4
+    salida = []
+    for inicio in range(0, n, bloque):
+        cantidad = min(bloque, n-inicio)
+        if pos >= len(paquete):
+            raise ValueError('Bloque ausente')
+        modo = paquete[pos]
+        pos += 1
+        tamano = entero()
+        if pos + tamano > len(paquete):
+            raise ValueError('Bloque truncado')
+        carga = paquete[pos:pos+tamano]
+        pos += tamano
+        if modo == 0:
+            if tamano != (cantidad+7)//8:
+                raise ValueError('Longitud literal inválida')
+            s = _bytes_bits(carga, cantidad)
+        elif modo == 1 and cantidad > b:
+            s = _decodificar(carga, cantidad, b)
         else:
-            with open(arg, "rb") as f:
-                datos = f.read()
-        return (np.unpackbits(np.frombuffer(datos, dtype=np.uint8)) + 48).tobytes().decode("ascii")
-    return "".join(c for c in arg if c in "01")
+            raise ValueError('Modo de bloque inválido')
+        salida.append(s)
+    if pos != len(paquete):
+        raise ValueError('Bytes sobrantes')
+    resultado = ''.join(salida)
+    if zlib.crc32(resultado.encode('ascii')) != crc:
+        raise ValueError('CRC incorrecto')
+    return resultado
+
+
+def filtrar_modelos(s, b, *, ancho=8, max_atributos=3):
+    """Búsqueda acotada de tablas; no ejecuta el codificador aritmético.
+
+    Estima -log2(P) usando exactamente las probabilidades cuantizadas enviadas,
+    más tabla, posiciones, semilla, registro y cuatro bytes de margen de rango.
+    Las cuentas incluyen el bloque: se transmiten, no se suponen conocidas por
+    el decodificador. Su entrenamiento no implica predicción causal de cuentas.
+    """
+    arr = np.frombuffer(s.encode('ascii'), dtype=np.uint8) & 1
+    n = len(s)-b
+    valores = arr[:n]
+    cache = {}
+
+    def evaluar(posiciones):
+        if posiciones in cache:
+            return cache[posiciones]
+        ids = np.zeros(n, dtype=np.int64)
+        for j in posiciones:
+            ids = (ids << 1) | arr[j+1:j+1+n]
+        total = np.bincount(ids, minlength=1 << len(posiciones))
+        unos = np.bincount(ids, weights=valores, minlength=len(total))
+        ceros = total-unos
+        tabla = np.clip(np.rint((ceros + .5)*256/(total+1)), 1, 255).astype(np.uint8)
+        p0 = tabla.astype(float)/256
+        entropia = float(-(ceros*np.log2(p0) + unos*np.log2(1-p0)).sum())
+        metadata = 1 + len(posiciones) + len(tabla) + (b+7)//8
+        bytes_estimados = metadata + math.ceil(entropia/8) + 4
+        costo = 8*(1 + len(_entero(bytes_estimados)) + bytes_estimados)
+        modelo = dict(posiciones=posiciones, tabla=tabla.tobytes(), estimado=costo)
+        cache[posiciones] = modelo
+        return modelo
+
+    evaluar(())  # Frecuencia marginal, útil cuando hay sesgo sin contexto.
+    frontera = [()]
+    for _ in range(min(max_atributos, b)):
+        siguientes = set()
+        for posiciones in frontera:
+            for j in range(b):
+                if j not in posiciones:
+                    siguientes.add(tuple(sorted((*posiciones, j))))
+        frontera = sorted(siguientes, key=lambda p: (evaluar(p)['estimado'], p))[:ancho]
+    # Complementa posiciones dispersas con prefijos que distinguen fases largas.
+    for k in range(1, min(b, 8)+1):
+        evaluar(tuple(range(k)))
+    mejor = min(cache.values(), key=lambda m: (m['estimado'], m['posiciones']))
+    return mejor, len(cache)
+
+
+def _comprimir_bloque(s, b):
+    literal = _registro(0, _bits_bytes(s))
+    estadistica = dict(n=len(s), modo='literal', candidatos=0, codificados=0,
+                       posiciones=[], estimado=None, total=8*len(literal))
+    if len(s) <= b:
+        return literal, estadistica
+    modelo, cantidad = filtrar_modelos(s, b)
+    estadistica.update(candidatos=cantidad, estimado=modelo['estimado'])
+    if modelo['estimado'] >= 8*len(literal):
+        return literal, estadistica
+    posiciones, tabla = modelo['posiciones'], modelo['tabla']
+    arr = np.frombuffer(s.encode('ascii'), dtype=np.uint8) & 1
+    n = len(s)-b
+    ids = np.zeros(n, dtype=np.int64)
+    for j in posiciones:
+        ids = (ids << 1) | arr[j+1:j+1+n]
+    probs = np.frombuffer(tabla, dtype=np.uint8).astype(np.int64)[ids] << 8
+    carga = _codificar(zip(arr[:n][::-1].tolist(), probs[::-1].tolist()))
+    metadata = bytes([len(posiciones), *posiciones]) + tabla + _bits_bytes(s[-b:])
+    comprimido = _registro(1, metadata+carga)
+    estadistica['codificados'] = 1
+    if len(comprimido) < len(literal):
+        estadistica.update(modo='probabilistico', posiciones=list(posiciones),
+                           total=8*len(comprimido))
+        return comprimido, estadistica
+    return literal, estadistica
+
+
+def empaquetar(s, b=16, *, bloque=8192):
+    """Comprime bits; total incluye cabecera, CRC, tablas y bloques literales."""
+    if not s or s.strip('01'):
+        raise ValueError('Se requiere una cadena no vacía de ceros y unos')
+    if not 1 <= b <= 64 or bloque < 1:
+        raise ValueError('Contexto entre 1 y 64; bloque positivo')
+    cabecera = MAGIC + _entero(len(s)) + _entero(b) + _entero(bloque)
+    cabecera += zlib.crc32(s.encode('ascii')).to_bytes(4, 'big')
+    registros, estadisticas = [], []
+    for inicio in range(0, len(s), bloque):
+        registro, estado = _comprimir_bloque(s[inicio:inicio+bloque], b)
+        registros.append(registro)
+        estadisticas.append(estado)
+    paquete = cabecera + b''.join(registros)
+    return dict(n=len(s), b=b, bloque=bloque, blob=paquete, total=8*len(paquete),
+                cabecera=8*len(cabecera), bloques=estadisticas)
+
+
+def serializar_paquete(info):
+    return info['blob']
+
+
+def generar_decodificador(s, info):
+    """Programa autónomo sin NumPy ni archivos auxiliares; --bits emite los bits."""
+    if info['n'] != len(s):
+        raise ValueError('Longitud incompatible')
+    import hashlib
+    funciones = (_bytes_bits, _decodificar, desempaquetar)
+    fuente = '\n\n'.join(inspect.getsource(f) for f in funciones)
+    return ("import base64, hashlib, sys, zlib\nMAGIC = b'MR\\x01'\n" + fuente +
+            '\nPAQUETE = ' + repr(base64.b64encode(info['blob'])) +
+            '\ndef reconstruir():\n    return desempaquetar(base64.b64decode(PAQUETE))\n' +
+            "\nif __name__ == '__main__':\n    s = reconstruir()\n" +
+            f"    assert hashlib.sha256(s.encode()).hexdigest() == {hashlib.sha256(s.encode()).hexdigest()!r}\n" +
+            "    if '--bits' in sys.argv:\n        sys.stdout.write(s)\n" +
+            "    else:\n        print('VERIFICACION SHA-256: OK')\n")
+
+
+def leer_bits(entrada):
+    ruta = Path(entrada)
+    # Evita consultar el filesystem con una cadena de bits arbitrariamente larga.
+    if entrada and not entrada.strip('01'):
+        return entrada
+    if ruta.suffix.lower() == '.pdf':
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            from PyPDF2 import PdfReader
+        datos = ''.join(p.extract_text() or '' for p in PdfReader(ruta).pages).encode('utf-8')
+    else:
+        datos = ruta.read_bytes()
+    return ''.join(format(v, '08b') for v in datos)
+
 
 def main():
-    if len(sys.argv) not in (2, 3):
-        sys.exit("Uso: python modelo_rapido.py BITS|ARCHIVO [BITS_CONTEXTO]")
-    
-    es_archivo = os.path.isfile(sys.argv[1])
-    s = leer_bits(sys.argv[1])
-    n = len(s)
-    if n < 2 + BITS_PRED:
-        sys.exit(f"Hacen falta al menos {2 + BITS_PRED} bits.")
-
-    if len(sys.argv) == 3:
-        opciones = [int(sys.argv[2])]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('entrada', help='Bits o archivo; de un PDF se comprime el texto extraído')
+    parser.add_argument('contexto', nargs='?', type=int, default=16)
+    parser.add_argument('--bloque', type=int, default=8192, help='Bits por bloque')
+    parser.add_argument('--salida', default='comprimido.mrp')
+    parser.add_argument('--decodificador', help='Ruta opcional del Python autónomo')
+    parser.add_argument('--descomprimir', action='store_true', help='Emite bits desde un paquete MR01')
+    args = parser.parse_args()
+    if args.descomprimir:
+        print(desempaquetar(Path(args.entrada).read_bytes()), end='')
+        return
+    try:
+        s = leer_bits(args.entrada)
+        inicio = time.perf_counter()
+        info = empaquetar(s, args.contexto, bloque=args.bloque)
+    except (ValueError, OSError) as exc:
+        parser.error(str(exc))
+    duracion = time.perf_counter()-inicio
+    Path(args.salida).write_bytes(serializar_paquete(info))
+    if args.decodificador:
+        Path(args.decodificador).write_text(generar_decodificador(s, info))
+    print(f"Original: {len(s)} bits | Paquete: {info['total']} bits | Tiempo: {duracion:.4f} s")
+    ahorro = 100 * (len(s) - info['total']) / len(s)
+    if ahorro >= 0:
+        print(f"Ahorro respecto al original: {ahorro:.2f}% (incluye cabecera y metadatos)")
     else:
-        opciones = [b for b in range(12, 68, 4) if b <= n - 1] or [n - 1]
-
-    print(" b | semilla | carga aritm. | cabecera | TOTAL (bits)")
-    mejor = None
-    for b in opciones:
-        info = empaquetar(s, b)
-        print(f"{b:2d} | {info['semilla']:7d} | {info['carga']:12d} | "
-              f"{info['cabecera']:8d} | {info['total']}")
-        if mejor is None or info["total"] < mejor["total"]:
-            mejor = info
-
-    b = mejor["b"]
-    print(f"\nElegido: b = {b} | total: {mejor['total']} bits "
-          f"({mejor['total'] / n:.4f} del original {n} bits)")
-
-    codigo = generar_decodificador(s, mejor)
-    if es_archivo:
-        with open("decodificador.py", "w", encoding="utf-8") as f:
-            f.write(codigo)
-        print("\nDecodificador guardado en decodificador.py")
-        print("Al ejecutarlo debe imprimir: VERIFICACION SHA-256: OK")
+        print(f"Aumento respecto al original: {-ahorro:.2f}% (incluye cabecera y metadatos)")
+    print(f"Bloques probabilísticos: {sum(x['modo'] == 'probabilistico' for x in info['bloques'])}/{len(info['bloques'])}")
+    print(f"Candidatos: {sum(x['candidatos'] for x in info['bloques'])} | Codificados: {sum(x['codificados'] for x in info['bloques'])}")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
