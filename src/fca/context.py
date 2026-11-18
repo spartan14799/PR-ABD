@@ -132,13 +132,41 @@ class FormalContext:
         cl = cl or self.closure
         return cl((A & ((1 << i) - 1)) | (1 << i))
 
-    def next_closure(self, A: int, cl=None) -> Optional[int]:
-        cl = cl or self.closure
-        for i in range(self.n_att - 1, -1, -1):
+    def _entropy_pivots(self) -> tuple[int, ...]:
+        pivots = getattr(self, "_entropy_pivot_order", None)
+        if pivots is None:
+            # H(p) crece al acercarse p a 1/2. Ordenar por |2·soporte − n|
+            # evita logaritmos y conserva el orden original en los empates.
+            pivots = tuple(sorted(
+                range(self.n_att - 1, -1, -1),
+                key=lambda j: abs(2 * self.ext[j].bit_count() - self.n_obj),
+            ))
+            self._entropy_pivot_order = pivots
+        return pivots
+
+    def next_closure(self, A: int, cl=None, *, order: str = "lectic") -> Optional[int]:
+        """Siguiente cerrado en el orden elegido, o None al terminar.
+
+        Usa el mismo orden en todas las llamadas de una enumeración. "lectic"
+        sigue el orden de las columnas y "entropy" prueba primero los atributos
+        de mayor entropía binaria global. Ambos usan las máscaras originales.
+        """
+        if order == "lectic":
+            pivots = range(self.n_att - 1, -1, -1)
+        elif order == "entropy":
+            pivots = self._entropy_pivots()
+        else:
+            raise ValueError("order debe ser 'lectic' o 'entropy'")
+
+        if cl is None:
+            cl = self.closure
+        lower = self.full_att
+        for i in pivots:
             bit = 1 << i
+            # Los pivotes aún por visitar forman el prefijo del orden elegido.
+            lower ^= bit
             if A & bit:
                 continue
-            lower = bit - 1
             B = cl((A & lower) | bit)
             if (B ^ A) & lower == 0:
                 return B
