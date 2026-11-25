@@ -1,5 +1,212 @@
 \section{Conceptos formales y NextClosure}
 \label{sec:conceptos}
 
-\emph{Pendiente: esta sección se completará en la Fase~2 (núcleo FCA).}
+Un concepto es un par formado por un conjunto de objetos y un conjunto de atributos que se determinan mutuamente: los atributos son los que comparten esos objetos, y los objetos son los que tienen esos atributos. Esta sección define los conceptos, muestra que forman un retículo y justifica los algoritmos que los calculan: NextClosure, Close-by-One y el cálculo del diagrama de Hasse. En el código están en \path{src/fca/}: \path{context.py} (operadores y NextClosure), \path{lattice.py} (Close-by-One y aristas) y \path{lattice_plot.py} (dibujo).
 
+En adelante, $\K = (G, M, I)$ es un contexto finito con $n = \lvert G \rvert$ objetos y $p = \lvert M \rvert$ atributos. El ejemplo es el contexto de los tumores de la \S\ref{sec:ejemplo}, con los atributos abreviados así:
+\begin{gather*}
+  r_j = (\text{radio}{\le}j), \qquad t_j = (\text{textura}{\le}j) \qquad (j = 0, 1, 2), \\
+  \dB = (\text{diagnóstico}{=}\mathrm{B}), \qquad \dM = (\text{diagnóstico}{=}\mathrm{M}).
+\end{gather*}
+
+
+\subsection{Derivación, clausura y conceptos}
+\label{sec:derivacion}
+
+\begin{definicion}[operadores de derivación]\label{def:derivacion}
+Para $A \subseteq G$ y $B \subseteq M$, $A'$ es el conjunto de atributos que tienen todos los objetos de~$A$, y $B'$ el de objetos que tienen todos los atributos de~$B$:
+\begin{equation}\label{eq:interseccion}
+  A' = \bigcap_{g \in A} g', \qquad B' = \bigcap_{m \in B} m',
+\end{equation}
+con la convención de que la intersección vacía es todo el conjunto ($M$ o~$G$).
+\end{definicion}
+
+\begin{proposicion}[\cite{ganter1999}]\label{prop:derivacion}
+Para $A, A_1, A_2 \subseteq G$ y $B \subseteq M$: (i)~si $A_1 \subseteq A_2$, entonces $A_2' \subseteq A_1'$; (ii)~$A \subseteq A''$; (iii)~$A' = A'''$; y (iv)~$A \subseteq B'$ si y solo si $B \subseteq A'$, es decir, si $A \times B \subseteq I$ (\emph{conexión de Galois}). Lo mismo vale intercambiando objetos y atributos.
+\end{proposicion}
+
+La propiedad~(i) dice que agregar atributos a~$B$ achica~$B'$ o lo deja igual: cada atributo es una condición más.
+
+\begin{definicion}[operador de clausura]\label{def:clausura}
+Un \emph{operador de clausura} sobre un conjunto~$S$ es una función $X \mapsto \overline{X}$ en los subconjuntos de~$S$ que es extensiva ($X \subseteq \overline{X}$), monótona (si $X \subseteq Y$, entonces $\overline{X} \subseteq \overline{Y}$) e idempotente ($\overline{\overline{X}} = \overline{X}$). Un conjunto es \emph{cerrado} si $\overline{X} = X$. El propio~$S$ es cerrado, la intersección de cerrados es cerrada y $\overline{X}$ es el menor cerrado que contiene a~$X$.
+\end{definicion}
+
+\begin{proposicion}[\cite{ganter1999}]\label{prop:clausura}
+$B \mapsto B''$ es un operador de clausura sobre~$M$, y $A \mapsto A''$ sobre~$G$. Sus cerrados se llaman \emph{intensiones} y \emph{extensiones}, y son exactamente los conjuntos de la forma~$A'$ y~$B'$: las intersecciones de filas y las de columnas.
+\end{proposicion}
+
+\begin{definicion}[concepto y orden]\label{def:concepto}
+Un \emph{concepto formal} es un par $(A, B)$ con $A' = B$ y $B' = A$; $A$ es su \emph{extensión} y $B$ su \emph{intensión}. El conjunto de conceptos, $\Ret(\K)$, se ordena por $(A_1, B_1) \le (A_2, B_2)$ si $A_1 \subseteq A_2$, lo que equivale a $B_2 \subseteq B_1$.
+\end{definicion}
+
+Cada intensión~$B$ da el concepto $(B', B)$, y todo concepto se obtiene así: enumerar intensiones es enumerar conceptos. En la tabla de cruces, un concepto es un rectángulo lleno de cruces que no se puede agrandar.
+
+\begin{teorema}[teorema básico, \cite{ganter1999}]\label{teo:basico}
+$(\Ret(\K), \le)$ es un retículo completo, con
+\[
+  \bigwedge_{t} (A_t, B_t) = \Bigl( \bigcap_{t} A_t,\ \Bigl( \bigcup_{t} B_t \Bigr)'' \Bigr),
+  \qquad
+  \bigvee_{t} (A_t, B_t) = \Bigl( \Bigl( \bigcup_{t} A_t \Bigr)'',\ \bigcap_{t} B_t \Bigr).
+\]
+Su máximo es $(G, G')$ y su mínimo $(M', M)$.
+\end{teorema}
+
+\begin{proposicion}[conceptos objeto y atributo]\label{prop:objeto-atributo}
+El \emph{concepto objeto} $\gamma g = (g'', g')$ es el menor concepto cuya extensión contiene a~$g$, y el \emph{concepto atributo} $\mu m = (m', m'')$ es el mayor cuya intensión contiene a~$m$. Además, $g \mathrel{I} m$ si y solo si $\gamma g \le \mu m$.
+\end{proposicion}
+
+\begin{proposicion}[atributos universales]\label{prop:universal}
+Si $u' = G$, entonces $u$ está en todas las intensiones, y quitar la columna de~$u$ da un retículo isomorfo, mediante $(A, B) \mapsto (A, B \setminus \{u\})$. Lo mismo ocurre al quitar columnas repetidas o que son intersección de otras \parencite{ganter1999}.
+\end{proposicion}
+
+\begin{observacion}[máscaras de bits]\label{obs:bits}
+\texttt{FormalContext} guarda cada columna~$m'$ (lista \texttt{ext}) y cada fila~$g'$ (lista \texttt{itx}) como un entero usado como vector de bits, así que la intersección es un AND. $B'$ cuesta $\lvert B \rvert$ operaciones sobre $n$~bits. Para~$A'$, \texttt{intent\_from\_extent} elige el camino más barato: el AND de las $\lvert A \rvert$ filas, o revisar cada atributo con $m \in A' \iff A \cap (G \setminus m') = \emptyset$, usando los complementos precalculados de la lista \texttt{not\_ext}.
+\end{observacion}
+
+\begin{ejemplo}[conceptos del ejemplo]\label{ej:conceptos}
+El contexto de los tumores tiene 10~conceptos. En el orden de NextClosure son:
+\begin{center}
+\small
+\begin{tabular}{rll@{\qquad}rll}
+  \toprule
+  & Extensión & Intensión & & Extensión & Intensión \\
+  \midrule
+  0 & $G$ & $\{r_2, t_2\}$ & 5 & $\{g_1, g_6\}$ & $\{r_1, r_2, t_0, t_1, t_2, \dB\}$ \\
+  1 & $\{g_1, g_2, g_3, g_5, g_6\}$ & $\{r_2, t_1, t_2\}$ & 6 & $\{g_1, g_2, g_4\}$ & $\{r_0, r_1, r_2, t_2, \dB\}$ \\
+  2 & $\{g_3, g_5\}$ & $\{r_2, t_1, t_2, \dM\}$ & 7 & $\{g_1, g_2\}$ & $\{r_0, r_1, r_2, t_1, t_2, \dB\}$ \\
+  3 & $\{g_1, g_2, g_4, g_6\}$ & $\{r_1, r_2, t_2, \dB\}$ & 8 & $\{g_1\}$ & $M \setminus \{\dM\}$ \\
+  4 & $\{g_1, g_2, g_6\}$ & $\{r_1, r_2, t_1, t_2, \dB\}$ & 9 & $\emptyset$ & $M$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+Todas las intensiones contienen a $r_2$ y~$t_2$, que son universales. El mínimo tiene extensión vacía porque ningún tumor es benigno y maligno a la vez. Los conceptos objeto de $g_3$ y~$g_5$ coinciden (el~2), porque sus filas son iguales, y también los conceptos atributo de $r_1$ y~$\dB$ (el~3), porque $r_1' = \dB'$.
+\end{ejemplo}
+
+
+\subsection{Orden léctico y NextClosure}
+\label{sec:nextclosure}
+
+NextClosure \parencite{ganter2010} recorre todos los cerrados de un operador de clausura cualquiera, en orden léctico, calculando cada uno a partir del anterior. Los atributos se numeran desde cero, en el orden de las columnas: $M = \{m_0, \dots, m_{p-1}\}$, donde $m_i$ es el bit~$i$ de las máscaras, y $M_{<i} = \{m_0, \dots, m_{i-1}\}$.
+
+\begin{definicion}[orden léctico]\label{def:lectico}
+Se escribe $A \prec_i B$ si $m_i \in B \setminus A$ y $A \cap M_{<i} = B \cap M_{<i}$, y $A \prec B$ si $A \prec_i B$ para algún~$i$; es decir, si el primer atributo en el que difieren está en~$B$. $A \preceq B$ significa $A \prec B$ o $A = B$.
+\end{definicion}
+
+\begin{proposicion}\label{prop:lectico}
+$\prec$ es un orden total estricto: $A \prec B$ si y solo si $\kappa(A) < \kappa(B)$, con $\kappa(A) = \sum_{m_i \in A} 2^{\,p-1-i}$. Además, si $A \subsetneq B$, entonces $A \prec B$.
+\end{proposicion}
+
+$\kappa$ lee la máscara con $m_0$ como bit más significativo, al revés de como la escribe Python; por eso \texttt{\_lectic\_key} de \path{lattice.py} invierte la cadena de bits.
+
+\begin{definicion}[la operación $\oplus$]\label{def:oplus}
+Para un operador de clausura $X \mapsto \overline{X}$ sobre~$M$, $A \oplus i = \overline{(A \cap M_{<i}) \cup \{m_i\}}$: se conservan los atributos de~$A$ anteriores a~$m_i$, se agrega~$m_i$ y se cierra.
+\end{definicion}
+
+\begin{lema}\label{lem:oplus}
+(1)~Si $A \prec_i B$, $A \prec_j C$ e $i < j$, entonces $C \prec_i B$. (2)~Si $B$ es cerrado y $A \prec_i B$, entonces $A \oplus i \subseteq B$ y $A \prec_i A \oplus i$.
+\end{lema}
+
+\begin{proof}
+(1)~$A$ y~$C$ coinciden en $M_{<j} \supseteq M_{<i} \cup \{m_i\}$; así que $m_i \notin C$ y $C \cap M_{<i} = A \cap M_{<i} = B \cap M_{<i}$. (2)~$(A \cap M_{<i}) \cup \{m_i\} \subseteq B$, y como $B$ es cerrado, $A \oplus i \subseteq B$. Entonces $A \cap M_{<i} \subseteq (A \oplus i) \cap M_{<i} \subseteq B \cap M_{<i} = A \cap M_{<i}$, y como $m_i \in (A \oplus i) \setminus A$, se tiene $A \prec_i A \oplus i$.
+\end{proof}
+
+\begin{teorema}[\cite{ganter2010}]\label{teo:nextclosure}
+Si $A \subsetneq M$, el menor cerrado, en orden léctico, mayor que~$A$ es $A \oplus i$, donde $i$ es el mayor índice tal que $A \prec_i A \oplus i$.
+\end{teorema}
+
+\begin{proof}
+$M$ es cerrado y $A \prec M$, así que existe el menor cerrado $A^{+} \succ A$; sea $i$ el índice con $A \prec_i A^{+}$. Por el lema, $A \oplus i \subseteq A^{+}$ y $A \prec_i A \oplus i$. Por la minimalidad de~$A^{+}$, $A^{+} \preceq A \oplus i$, y por la inclusión, $A \oplus i \preceq A^{+}$; luego son iguales. Si algún $j > i$ cumpliera $A \prec_j A \oplus j$, la parte~(1) del lema daría $A \oplus j \prec_i A^{+}$, en contra de la minimalidad de~$A^{+}$.
+\end{proof}
+
+\begin{corolario}[NextClosure]\label{cor:nextclosure}
+Empezando en $\overline{\emptyset}$, que es el menor cerrado, y aplicando el teorema hasta llegar a~$M$, se obtienen todos los cerrados, cada uno una vez y en orden léctico creciente.
+\end{corolario}
+
+\begin{observacion}[implementación y costo]\label{obs:nextclosure-codigo}
+\texttt{next\_closure(A, cl)} recorre $i$ de $p - 1$ a~0, salta los $m_i \in A$ y acepta el primer~$i$ con $(A \oplus i) \cap M_{<i} = A \cap M_{<i}$; en máscaras, \texttt{(B \textasciicircum{} A) \& lower == 0}. Si no hay ninguno, $A = M$ y devuelve \texttt{None}. La clausura \texttt{cl} es un parámetro: la Sección~\ref{sec:implicaciones} la reemplaza por la clausura respecto de implicaciones. Cada paso calcula a lo sumo $p$~clausuras de costo $O(np)$, así que cada concepto cuesta $O(np^2)$ y no hay que guardar los anteriores. Lo que puede crecer sin control es el número de conceptos: el contexto $(S, S, \ne)$, con $\lvert S \rvert = k$, tiene $2^k$, porque allí $B' = S \setminus B$ y todo $B \subseteq S$ es una intensión.
+\end{observacion}
+
+\begin{ejemplo}[un paso]\label{ej:nextclosure}
+Con los atributos en el orden $r_0, r_1, r_2, t_0, t_1, t_2, \dB, \dM$, se parte de la intensión del concepto~2, $A = \{r_2, t_1, t_2, \dM\}$. Con $i = 6$, la clausura de $\{r_2, t_1, t_2, \dB\}$ es $\{r_1, r_2, t_1, t_2, \dB\}$, que agrega~$r_1$, de índice menor que~6, y se rechaza; con $i = 3$, la clausura de $\{r_2, t_0\}$ también agrega~$r_1$; con $i = 1$, la clausura de $\{r_1\}$ es $\{r_1, r_2, t_2, \dB\}$, que no agrega~$r_0$, y se acepta. Es la intensión del concepto~3.
+\end{ejemplo}
+
+
+\subsection{Close-by-One}
+\label{sec:cbo}
+
+Close-by-One \parencite{kuznetsov1993} genera los mismos conceptos con una búsqueda en profundidad. Si $A = B'$ y $m_j \notin B$, la extensión de $(B \cup \{m_j\})''$ es $A \cap m_j'$: un solo AND.
+
+\begin{definicion}[árbol de Close-by-One]\label{def:cbo}
+Los nodos son pares $(B, y)$, con $B$ una intensión y $0 \le y \le p$, y la raíz es $(G', 0)$. Los hijos de $(B, y)$ son los pares $(D, j + 1)$ con $y \le j < p$, $m_j \notin B$, $D = (B \cup \{m_j\})''$ y $D \cap M_{<j} = B \cap M_{<j}$ (\emph{prueba de canonicidad}, que es $B \prec_j D$).
+\end{definicion}
+
+\begin{teorema}[\cite{kuznetsov1993}]\label{teo:cbo}
+Cada intensión de~$\K$ aparece en exactamente un nodo del árbol.
+\end{teorema}
+
+\begin{proof}
+Sea $D$ una intensión; como $\emptyset \subseteq D$, $G' = \emptyset'' \subseteq D$. Sea $D_0 = G'$ y, mientras $D_k \ne D$, sea $D_{k+1} = (D_k \cup \{m_{j_{k+1}}\})''$, donde $m_{j_{k+1}}$ es el atributo de menor índice de $D \setminus D_k$. Los $D_k$ crecen dentro de~$D$, que es cerrado, y llegan a~$D$. Por la elección de los índices, los atributos de~$D$ con índice menor que~$j_{k+1}$ ya están en~$D_k$; de ahí salen $j_{k+1} > j_k$ y la canonicidad $D_{k+1} \cap M_{<j_{k+1}} = D_k \cap M_{<j_{k+1}}$, así que cada $D_{k+1}$ es hijo de~$D_k$ y $D$ aparece en el árbol. Recíprocamente, en un camino $(E_0, 0), (E_1, l_1 + 1), \dots$ que llega a~$D$, los índices crecen, y cada paso, por su canonicidad, no agrega atributos de índice menor que el suyo. Entonces ningún atributo de $D \setminus E_k$ tiene índice menor que~$l_{k+1}$, y $m_{l_{k+1}}$ es el de menor índice de $D \setminus E_k$. Por inducción, el camino es el de los~$D_k$, que es único.
+\end{proof}
+
+\begin{observacion}[implementación]\label{obs:cbo-codigo}
+\texttt{concepts\_cbo} recorre el árbol con una pila, guarda la extensión de cada nodo y hace la prueba de canonicidad antes de calcular la intensión del candidato: para $k < j$ con $m_k \notin B$, $m_k \in D$ si y solo si $(A \cap m_j') \cap (G \setminus m_k') = \emptyset$. Al final ordena los conceptos por~$\kappa$ de su intensión, que es el orden de NextClosure, para que el índice de cada concepto no dependa del algoritmo. \textcite{kuznetsov2002} comparan experimentalmente estos y otros algoritmos.
+\end{observacion}
+
+
+\subsection{Diagrama de Hasse}
+\label{sec:hasse}
+
+\begin{definicion}[cobertura]\label{def:cobertura}
+$c_1 \lessdot c_2$ ($c_1$ es un \emph{vecino inferior} de~$c_2$) si $c_1 < c_2$ y no hay ningún concepto entre los dos. El \emph{diagrama de Hasse} tiene una arista por cada par $c_1 \lessdot c_2$, con $c_2$ más arriba. Como el orden es finito, $c_1 < c_2$ si y solo si se puede bajar de~$c_2$ a~$c_1$ por aristas.
+\end{definicion}
+
+\begin{proposicion}[vecinos inferiores]\label{prop:vecinos}
+Los vecinos inferiores de $(A, B)$ son los conceptos cuya extensión es maximal en la familia $\{ A \cap m' : m \in M \setminus B \}$.
+\end{proposicion}
+
+Cada $A \cap m' = (B \cup \{m\})'$ es una extensión estrictamente contenida en~$A$, y todo concepto $(C, D) < (A, B)$ cumple $C \subseteq A \cap m'$ para cualquier $m \in D \setminus B$; por eso los vecinos inferiores son los maximales de la familia. \texttt{make\_lattice} calcula esos candidatos con un AND cada uno, los ordena de mayor a menor tamaño y conserva los que no están contenidos en uno ya conservado; cada concepto tiene a lo sumo $p$ vecinos inferiores. \texttt{hasse\_layout} pone cada concepto a la altura del camino más largo desde el máximo, de modo que toda arista baja, y ordena cada nivel con baricentros \parencite{sugiyama1981}. Minimizar los cruces es NP-difícil \parencite{eades1994}, así que el dibujo es heurístico.
+
+\begin{proposicion}[etiquetado reducido]\label{prop:lectura}
+Si cada atributo~$m$ se escribe junto a~$\mu m$ y cada objeto~$g$ junto a~$\gamma g$, la extensión de un concepto son los objetos escritos en él o debajo, y su intensión los atributos escritos en él o encima. En particular, $g \mathrel{I} m$ si y solo si se puede bajar de la etiqueta de~$m$ a la de~$g$.
+\end{proposicion}
+
+Se sigue de la Proposición~\ref{prop:objeto-atributo}, que es también la caracterización que usa \texttt{reduced\_labels} para ubicar las etiquetas.
+
+\begin{ejemplo}[diagrama del ejemplo]\label{ej:hasse}
+En la Figura~\ref{fig:hasse-tumores}, el concepto máximo lleva $r_2$ y~$t_2$, que tienen todos los objetos. $r_1$ y~$\dB$ comparten el nodo~3: en esta muestra, un tumor es benigno si y solo si su radio es${}\le 17.13$. Debajo de~$\dM$ solo están $g_3$ y~$g_5$, los dos tumores malignos, que tienen la misma fila. Bajando desde~$t_0$ se llega a $g_6$ y~$g_1$, así que $t_0' = \{g_1, g_6\}$.
+\end{ejemplo}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[x=2.4cm, y=1.1cm,
+    nodo/.style={circle, draw, fill=white, inner sep=0pt, minimum size=14pt, font=\scriptsize},
+    atr/.style={font=\small, text=enlace},
+    obj/.style={font=\small}]
+  \node[nodo] (c0) at (0, 0) {0};
+  \node[nodo] (c1) at (-0.5, -1) {1};
+  \node[nodo] (c3) at (0.5, -1) {3};
+  \node[nodo] (c2) at (-1.25, -2) {2};
+  \node[nodo] (c4) at (-0.25, -2) {4};
+  \node[nodo] (c6) at (0.75, -2) {6};
+  \node[nodo] (c5) at (-0.5, -3) {5};
+  \node[nodo] (c7) at (0.5, -3) {7};
+  \node[nodo] (c8) at (0, -4) {8};
+  \node[nodo] (c9) at (0, -5) {9};
+  \foreach \a/\b in {c0/c1, c0/c3, c1/c2, c1/c4, c2/c9, c3/c4, c3/c6,
+                     c4/c5, c4/c7, c5/c8, c6/c7, c7/c8, c8/c9}
+    \draw (\a) -- (\b);
+  \node[atr, above=2pt] at (c0.north) {$r_2,\ t_2$};
+  \node[atr, above left=0pt] at (c1.north west) {$t_1$};
+  \node[atr, above right=0pt] at (c3.north east) {$r_1,\ \dB$};
+  \node[atr, above left=0pt] at (c2.north west) {$\dM$};
+  \node[atr, above right=0pt] at (c6.north east) {$r_0$};
+  \node[atr, above left=0pt] at (c5.north west) {$t_0$};
+  \node[obj, below left=0pt] at (c2.south west) {$g_3,\ g_5$};
+  \node[obj, right=2pt] at (c6.east) {$g_4$};
+  \node[obj, right=2pt] at (c7.east) {$g_2$};
+  \node[obj, below=1pt] at (c5.south) {$g_6$};
+  \node[obj, right=2pt] at (c8.east) {$g_1$};
+\end{tikzpicture}
+\caption{Diagrama de Hasse del contexto de los tumores, con etiquetado reducido y las posiciones de \texttt{hasse\_layout}. Los números son los índices del Ejemplo~\ref{ej:conceptos}; los atributos van en azul y los objetos en negro.}
+\label{fig:hasse-tumores}
+\end{figure}

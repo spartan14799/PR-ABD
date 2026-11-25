@@ -1,409 +1,190 @@
 \section{Del dato tabular al contexto formal}
 \label{sec:contexto}
 
-El Análisis Formal de Conceptos trabaja sobre tablas binarias: cada objeto tiene o no tiene cada atributo. Los datos reales, en cambio, traen columnas numéricas (radio, textura, área\dots) y categóricas (diagnóstico). Esta sección formaliza cómo se pasa de una tabla así a un contexto formal, en tres pasos:
-\begin{enumerate}
-  \item \textbf{Discretización:} cada variable numérica se divide en un número finito de intervalos ordenados (\S\ref{sec:discretizacion}); ese número se elige con una regla (\S\ref{sec:numero-intervalos}).
-  \item \textbf{Escalado conceptual:} cada variable, ya con finitos valores, se traduce en atributos binarios mediante una escala nominal u ordinal (\S\ref{sec:escalado} y \S\ref{sec:propiedades-escalado}).
-  \item \textbf{Matriz de incidencia:} el resultado se representa como una matriz booleana de tamaño $\lvert G \rvert \times \lvert M \rvert$ (\S\ref{sec:contextos}).
-\end{enumerate}
-
-Primero se presentan las nociones de FCA (contexto y escala) y luego la discretización, que es lo que permite aplicar las escalas a variables continuas. En el código, estos pasos están en \path{src/preprocessing/}: \path{cuant_type.py} y \path{quantiles.py} implementan la discretización, y \path{scaler.py} une los pasos y produce la matriz. La documentación de cada archivo, con su pseudocódigo, está en \path{docs/codigo/preprocessing/}.
+El Análisis Formal de Conceptos trabaja sobre tablas binarias: cada objeto tiene o no tiene cada atributo. Los datos reales traen columnas numéricas (radio, textura, área\dots) y categóricas (diagnóstico). Esta sección formaliza los tres pasos que llevan de una tabla así a un contexto formal: la discretización de las variables numéricas (\S\ref{sec:discretizacion} y \S\ref{sec:numero-intervalos}), el escalado conceptual (\S\ref{sec:escalado} y \S\ref{sec:propiedades-escalado}) y la matriz de incidencia (\S\ref{sec:contextos}). En el código, \path{cuant_type.py} y \path{quantiles.py} discretizan, y \path{scaler.py} escala y produce la matriz; todos están en \path{src/preprocessing/}, y su documentación en \path{docs/codigo/preprocessing/}.
 
 
 \subsection{Contextos formales y matriz de incidencia}
 \label{sec:contextos}
 
 \begin{definicion}[contexto formal]\label{def:contexto}
-Un \emph{contexto formal} es una terna $\K = (G, M, I)$ formada por un conjunto~$G$ de \emph{objetos}, un conjunto~$M$ de \emph{atributos} y una relación binaria $I \subseteq G \times M$, la \emph{relación de incidencia}. Si $(g, m) \in I$ se escribe $g \mathrel{I} m$, y se lee \enquote{el objeto~$g$ tiene el atributo~$m$}.
+Un \emph{contexto formal} es una terna $\K = (G, M, I)$ formada por un conjunto finito~$G$ de \emph{objetos}, un conjunto finito~$M$ de \emph{atributos} y una relación $I \subseteq G \times M$. Si $(g, m) \in I$ se escribe $g \mathrel{I} m$: \enquote{el objeto~$g$ tiene el atributo~$m$}.
 \end{definicion}
-
-En este proyecto $G$ y $M$ son siempre finitos: los objetos son las filas de un dataset y los atributos se construyen a partir de sus columnas.
 
 \begin{definicion}[fila y columna]\label{def:fila-columna}
-Para un objeto $g \in G$ y un atributo $m \in M$ se definen
-\[
-  g' = \{ m \in M : g \mathrel{I} m \}, \qquad m' = \{ g \in G : g \mathrel{I} m \}.
-\]
-El conjunto~$g'$ reúne los atributos del objeto~$g$ (su \emph{fila}) y $m'$ los objetos que tienen el atributo~$m$ (su \emph{columna}, o \emph{extensión} del atributo).
+Para $g \in G$ y $m \in M$, $g' = \{ m \in M : g \mathrel{I} m \}$ es la \emph{fila} de~$g$ y $m' = \{ g \in G : g \mathrel{I} m \}$ es la \emph{columna} de~$m$.
 \end{definicion}
-
-En la Sección~\ref{sec:conceptos} estos operadores se extienden a conjuntos de objetos y de atributos; son la base del cálculo de conceptos.
 
 \begin{definicion}[matriz de incidencia]\label{def:matriz}
-Sean $G = \{g_1, \dots, g_n\}$ y $M = \{m_1, \dots, m_p\}$, con un orden fijo. La \emph{matriz de incidencia} de~$\K$ es la matriz booleana $X \in \{0, 1\}^{n \times p}$ dada por $X_{ij} = 1$ si y solo si $g_i \mathrel{I} m_j$.
+Con $G = \{g_1, \dots, g_n\}$ y $M = \{m_1, \dots, m_p\}$ en un orden fijo, la \emph{matriz de incidencia} es $X \in \{0, 1\}^{n \times p}$ con $X_{ij} = 1$ si y solo si $g_i \mathrel{I} m_j$. Se dibuja como una \emph{tabla de cruces}.
 \end{definicion}
 
-En FCA la matriz se suele dibujar como una \emph{tabla de cruces}: una~$\times$ en la fila~$g$ y la columna~$m$ indica que $g \mathrel{I} m$. La fila~$i$ de~$X$ es la función indicadora de~$g_i'$, y la columna~$j$ la de~$m_j'$.
-
-\begin{observacion}[representación explícita o implícita]\label{obs:representacion}
-Fijados los órdenes de $G$ y $M$, la correspondencia entre relaciones~$I$ y matrices~$X$ es biyectiva, así que guardar la matriz equivale a guardar el contexto. Hay dos formas habituales de hacerlo:
-\begin{itemize}
-  \item \emph{Explícita:} la matriz completa, con $np$ celdas. Un \texttt{DataFrame} booleano de pandas usa un byte por celda; empaquetada en bits ocupa $np$ bits.
-  \item \emph{Implícita:} solo el conjunto~$g'$ de cada objeto, por ejemplo como un entero usado como vector de bits o como una lista de índices. Conviene cuando la matriz es dispersa.
-\end{itemize}
-Las escalas de la \S\ref{sec:escalado} producen matrices de densidades muy distintas: la nominal pone exactamente un~1 por variable en cada fila (densidad~$1/r$ en el bloque de una variable con $r$~valores), mientras que la ordinal llena cerca de la mitad de cada bloque cuando los valores están balanceados.
+\begin{observacion}[representación]\label{obs:representacion}
+Fijados los órdenes, la matriz determina el contexto. Se puede guardar de forma explícita, como un \texttt{DataFrame} booleano, o implícita, con cada fila~$g'$ como un entero usado como vector de bits; esta es la que usa el código de la Sección~\ref{sec:conceptos}.
 \end{observacion}
+
 
 \subsection{Contextos multivaluados y escalado conceptual}
 \label{sec:escalado}
 
 \begin{definicion}[contexto multivaluado]\label{def:multivaluado}
-Un \emph{contexto multivaluado} es una cuaterna $(G, M, W, I)$ donde $G$ es un conjunto de objetos, $M$~un conjunto de \emph{atributos multivaluados}, $W$~un conjunto de valores e $I \subseteq G \times M \times W$ una relación ternaria tal que
-\[
-  (g, m, w) \in I \ \text{y}\ (g, m, v) \in I \implies w = v.
-\]
-Si $(g, m, w) \in I$ se escribe $m(g) = w$. Si no existe tal~$w$, el valor de~$m$ en~$g$ \emph{falta}. Los objetos en los que $m$ está definido forman el conjunto~$D_m$, y los valores que toma forman el conjunto $V_m = \{ m(g) : g \in D_m \}$ de \emph{valores observados}.
+Un \emph{contexto multivaluado} $(G, M, W, I)$ tiene objetos~$G$, atributos multivaluados~$M$, valores~$W$ y una relación $I \subseteq G \times M \times W$ en la que cada par $(g, m)$ tiene a lo sumo un valor, que se escribe $m(g)$; si no tiene ninguno, el valor \emph{falta}. $D_m$ es el conjunto de objetos en los que $m$ está definido y $V_m = \{ m(g) : g \in D_m \}$ el de sus \emph{valores observados}.
 \end{definicion}
 
-\begin{observacion}[relación con el modelo relacional]\label{obs:relacional}
-Un contexto multivaluado es, en esencia, una instancia de una relación (una tabla): los objetos son las tuplas, los atributos multivaluados son las columnas, los valores salen de los dominios de cada columna y un valor faltante corresponde a un \texttt{NULL}. Cada atributo es una función parcial $m \colon G \rightharpoonup W$. Por eso FCA puede tomar como entrada una tabla de una base de datos, siempre que antes se escalen sus columnas.
+\begin{observacion}[modelo relacional]\label{obs:relacional}
+Un contexto multivaluado es una tabla de una base de datos: los objetos son las tuplas, los atributos son las columnas y un valor faltante es un \texttt{NULL}.
 \end{observacion}
 
 \begin{definicion}[escala conceptual]\label{def:escala}
-Sea $m$ un atributo multivaluado. Una \emph{escala} para~$m$ es un contexto formal $\mathbb{S}_m = (S, N_m, I_m)$ cuyo conjunto de objetos~$S$ contiene todos los valores observados de~$m$. Los objetos de la escala son valores, y sus atributos~$N_m$ son los atributos binarios con los que se describirá cada valor.
+Una \emph{escala} para~$m$ es un contexto formal $\mathbb{S}_m = (S, N_m, I_m)$ cuyos objetos incluyen los valores observados de~$m$; sus atributos~$N_m$ son los atributos binarios con los que se describe cada valor. En el código, $S = V_m$.
 \end{definicion}
 
-En la implementación, el conjunto de objetos de cada escala es exactamente~$V_m$: solo los valores que aparecen en los datos generan atributos.
-
-\begin{definicion}[escalado plano y contexto derivado]\label{def:derivado}
-Dados un contexto multivaluado $(G, M, W, I)$ y una escala~$\mathbb{S}_m$ para cada $m \in M$, el \emph{contexto derivado} es el contexto formal $(G, N, J)$ con
+\begin{definicion}[contexto derivado]\label{def:derivado}
+El \emph{contexto derivado} de $(G, M, W, I)$ con escalas~$\mathbb{S}_m$ es el contexto formal $(G, N, J)$ con
 \[
-  N = \bigcup_{m \in M} \{m\} \times N_m, \qquad
-  g \mathrel{J} (m, a) \iff g \in D_m \ \text{y}\ m(g) \mathrel{I_m} a.
+  N = \bigcup_{m \in M} \{m\} \times N_m, \qquad g \mathrel{J} (m, a) \iff g \in D_m \text{ y } m(g) \mathrel{I_m} a.
 \]
+Cada columna~$m$ se reemplaza por un bloque de columnas binarias; si a~$g$ le falta el valor de~$m$, su fila en ese bloque queda vacía.
 \end{definicion}
-
-Es decir, cada columna~$m$ se reemplaza por un bloque de columnas binarias, una por cada atributo~$a$ de su escala, y la fila de~$g$ en ese bloque es la fila del valor~$m(g)$ en la escala. Si a~$g$ le falta el valor de~$m$, su fila en ese bloque queda vacía.
 
 \begin{definicion}[escalas nominal y ordinal]\label{def:escalas}
-Sea $V = \{v_1, \dots, v_r\}$ un conjunto finito de valores con $v_1 < v_2 < \dots < v_r$.
-\begin{itemize}
-  \item La \emph{escala nominal} es $\mathbb{N}_V = (V, V, =)$: el valor~$v$ tiene el atributo~$w$ si y solo si $v = w$.
-  \item La \emph{escala ordinal creciente} es $\mathbb{O}_V^{\le} = (V, V, \le)$: el valor~$v$ tiene el atributo~$w$ si y solo si $v \le w$.
-  \item La \emph{escala ordinal decreciente} es $\mathbb{O}_V^{\ge} = (V, V, \ge)$: el valor~$v$ tiene el atributo~$w$ si y solo si $v \ge w$.
-\end{itemize}
-La escala nominal solo necesita que los valores se puedan distinguir; las ordinales necesitan además un orden con significado.
+Para valores $v_1 < \dots < v_r$, la \emph{escala nominal} es $(V, V, =)$, la \emph{ordinal creciente} es $(V, V, \le)$ y la \emph{ordinal decreciente} es $(V, V, \ge)$. En el contexto derivado, sus atributos se escriben $(m{=}w)$, $(m{\le}w)$ y $(m{\ge}w)$, y son las columnas \texttt{m=w}, \texttt{m<=w} y \texttt{m>=w} de la función \texttt{scaling} de \path{scaler.py}.
 \end{definicion}
 
-En el contexto derivado, el atributo $(m, w)$ se escribe $(m{=}w)$, $(m{\le}w)$ o $(m{\ge}w)$ según la escala usada. Corresponde a la columna \texttt{m=w}, \texttt{m<=w} o \texttt{m>=w} que produce la función \texttt{scaling} de \path{scaler.py}.
-
-\begin{ejemplo}[escalas para tres valores]\label{ej:escalas}
-Con $V = \{0, 1, 2\}$, las tablas de cruces de la escala nominal y de la ordinal creciente son:
-\begin{center}
-\begin{tabular}{c|ccc}
-  $\mathbb{N}_V$ & $=0$ & $=1$ & $=2$ \\ \hline
-  $0$ & $\times$ &          &          \\
-  $1$ &          & $\times$ &          \\
-  $2$ &          &          & $\times$
-\end{tabular}
-\qquad\qquad
-\begin{tabular}{c|ccc}
-  $\mathbb{O}_V^{\le}$ & $\le 0$ & $\le 1$ & $\le 2$ \\ \hline
-  $0$ & $\times$ & $\times$ & $\times$ \\
-  $1$ &          & $\times$ & $\times$ \\
-  $2$ &          &          & $\times$
-\end{tabular}
-\end{center}
-La escala nominal es la matriz identidad y la ordinal creciente es triangular superior.
+\begin{ejemplo}[tres valores]\label{ej:escalas}
+Con $V = \{0, 1, 2\}$, la escala nominal es la matriz identidad, y la ordinal creciente es triangular superior: el valor~0 tiene $(\le 0)$, $(\le 1)$ y $(\le 2)$; el valor~1, $(\le 1)$ y $(\le 2)$; y el valor~2, solo $(\le 2)$.
 \end{ejemplo}
 
 \begin{observacion}[escala interordinal]\label{obs:interordinal}
-Con la escala creciente, cualquier combinación no vacía de atributos de una misma variable describe un conjunto de la forma $\{ g : m(g) \le w \}$; con la decreciente, de la forma $\{ g : m(g) \ge w \}$. Si se usan las dos a la vez (la \emph{escala interordinal} de \textcite{ganter1999}), la combinación de $(m{\ge}v)$ y $(m{\le}w)$ describe el intervalo $v \le m(g) \le w$. La implementación no la ofrece como opción, pero se obtiene concatenando las salidas de \texttt{scaling} con \texttt{"le"} y con \texttt{"ge"}.
+Si se usan a la vez las dos escalas ordinales (la escala \emph{interordinal} de \textcite{ganter1999}), los atributos $(m{\ge}v)$ y $(m{\le}w)$ describen juntos el intervalo $v \le m(g) \le w$. Se obtiene concatenando las salidas de \texttt{scaling} con \texttt{"le"} y con \texttt{"ge"}.
 \end{observacion}
+
 
 \subsection{Propiedades del escalado}
 \label{sec:propiedades-escalado}
 
-En esta sección, $m$ es un atributo multivaluado con valores observados $V_m = \{v_1, \dots, v_r\}$, donde $v_1 < \dots < v_r$, escalado con alguna de las escalas de la Definición~\ref{def:escalas} sobre~$V_m$, como hace el código.
+Sea $m$ un atributo con valores observados $v_1 < \dots < v_r$, escalado sobre~$V_m$ como en el código. Las propiedades siguientes salen directamente de las definiciones, usando que $m(g)$ es único.
 
 \begin{proposicion}[la escala nominal induce una partición]\label{prop:particion}
-Los conjuntos $(m{=}v)'$, con $v \in V_m$, son no vacíos, disjuntos dos a dos y su unión es~$D_m$. En particular, si $m$ no tiene valores faltantes, forman una partición de~$G$, y cada fila de la matriz de incidencia tiene exactamente un~1 en el bloque de~$m$.
+Los conjuntos $(m{=}v)'$, con $v \in V_m$, son no vacíos, disjuntos dos a dos y su unión es~$D_m$. Sin valores faltantes, cada fila tiene exactamente un~1 en el bloque de~$m$.
 \end{proposicion}
-
-\begin{proof}
-Por la Definición~\ref{def:derivado}, $g \in (m{=}v)'$ si y solo si $g \in D_m$ y $m(g) = v$. Cada $(m{=}v)'$ es no vacío porque $v$ es un valor observado. Si $g$ estuviera en $(m{=}v)'$ y en $(m{=}w)'$, se tendría $v = m(g) = w$, pues $m(g)$ es único (Definición~\ref{def:multivaluado}). Por último, todo $g \in D_m$ pertenece a $(m{=}m(g))'$, y ningún objeto fuera de~$D_m$ pertenece a alguno de estos conjuntos.
-\end{proof}
 
 \begin{proposicion}[la escala ordinal induce una cadena]\label{prop:cadena}
-Con la escala ordinal creciente y con la decreciente se tiene, respectivamente,
-\begin{gather*}
-  (m{\le}v_1)' \subseteq (m{\le}v_2)' \subseteq \dots \subseteq (m{\le}v_r)' = D_m, \\
-  D_m = (m{\ge}v_1)' \supseteq (m{\ge}v_2)' \supseteq \dots \supseteq (m{\ge}v_r)'.
-\end{gather*}
+$(m{\le}v_1)' \subseteq \dots \subseteq (m{\le}v_r)' = D_m$ y $D_m = (m{\ge}v_1)' \supseteq \dots \supseteq (m{\ge}v_r)'$.
 \end{proposicion}
 
-\begin{proof}
-Si $g \in (m{\le}v_i)'$ e $i \le j$, entonces $m(g) \le v_i \le v_j$, luego $g \in (m{\le}v_j)'$. Además, todo $g \in D_m$ cumple $m(g) \le v_r$, porque $v_r$ es el mayor de los valores observados, y los objetos fuera de~$D_m$ no tienen ningún atributo del bloque. El caso decreciente es simétrico, usando que $v_1$ es el menor de los valores observados.
-\end{proof}
-
 \begin{corolario}[atributo universal]\label{cor:universal}
-Si $m$ no tiene valores faltantes, todos los objetos tienen el atributo $(m{\le}v_r)$ de la escala creciente, y también el atributo $(m{\ge}v_1)$ de la decreciente: su columna está llena de unos.
+Sin valores faltantes, todos los objetos tienen $(m{\le}v_r)$ y $(m{\ge}v_1)$: sus columnas están llenas. Un atributo así no cambia el retículo y se puede quitar (Proposición~\ref{prop:universal}).
 \end{corolario}
 
-Una columna llena no distingue ningún objeto. En la Sección~\ref{sec:conceptos} se verá que un atributo que tienen todos los objetos aparece en todas las intensiones y no cambia la estructura del retículo, así que se puede eliminar para reducir el contexto.
-
-\begin{observacion}[regularidades que vienen de la escala]\label{obs:fondo}
-Las Proposiciones~\ref{prop:particion} y~\ref{prop:cadena} producen en el contexto derivado regularidades que se deben a la escala y no a los datos: todo objeto con $(m{\le}v_i)$ tiene también $(m{\le}v_j)$ si $i < j$, y ningún objeto tiene a la vez $(m{=}v)$ y $(m{=}w)$ con $v \ne w$. En la Sección~\ref{sec:implicaciones} estas regularidades aparecerán como implicaciones de la base de Guigues--Duquenne. Conviene distinguirlas de las dependencias que realmente expresan los datos, por ejemplo marcándolas como \emph{implicaciones de fondo} que aporta la escala.
+\begin{observacion}[regularidades de la escala]\label{obs:fondo}
+Por las Proposiciones \ref{prop:particion} y~\ref{prop:cadena}, todo objeto con $(m{\le}v_i)$ tiene $(m{\le}v_j)$ si $i < j$, y ninguno tiene a la vez $(m{=}v)$ y $(m{=}w)$ con $v \ne w$. Son regularidades de la escala, no de los datos; la \S\ref{sec:fondo} las separa de las implicaciones que sí vienen de los datos.
 \end{observacion}
 
 \begin{proposicion}[el escalado no pierde información]\label{prop:sin-perdida}
-Para todo $g \in D_m$, el valor $m(g)$ se puede recuperar de la fila~$g'$ del contexto derivado:
-\begin{align*}
-  \text{escala nominal:} \quad & m(g) = \text{el único } v \in V_m \text{ tal que } (m{=}v) \in g', \\
-  \text{escala creciente:} \quad & m(g) = \min \{ v \in V_m : (m{\le}v) \in g' \}, \\
-  \text{escala decreciente:} \quad & m(g) = \max \{ v \in V_m : (m{\ge}v) \in g' \}.
-\end{align*}
+Para $g \in D_m$, el valor $m(g)$ se recupera de la fila~$g'$: es el único~$v$ con $(m{=}v) \in g'$, el menor~$v$ con $(m{\le}v) \in g'$ o el mayor~$v$ con $(m{\ge}v) \in g'$, según la escala.
 \end{proposicion}
 
-\begin{proof}
-El caso nominal es la Proposición~\ref{prop:particion}. Para la escala creciente, $(m{\le}v) \in g'$ si y solo si $m(g) \le v$, así que el conjunto de la derecha es $\{ v \in V_m : v \ge m(g) \}$. Ese conjunto contiene a $m(g)$, porque $m(g)$ es un valor observado, y todos sus elementos son mayores o iguales que~$m(g)$; por tanto su mínimo es~$m(g)$. El caso decreciente es simétrico.
-\end{proof}
-
 \begin{corolario}\label{cor:filas}
-Dos objetos sin valores faltantes tienen la misma fila en el contexto derivado si y solo si tienen los mismos valores en todas las variables. Además, con cualquiera de las tres escalas, el contexto derivado tiene $\lvert N \rvert = \sum_{m \in M} \lvert V_m \rvert$ atributos.
+Dos objetos sin valores faltantes tienen la misma fila en el contexto derivado si y solo si tienen los mismos valores en todas las variables. El contexto derivado tiene $\sum_{m} \lvert V_m \rvert$ atributos.
 \end{corolario}
 
-\begin{proof}
-Si dos objetos tienen los mismos valores, tienen la misma fila por la Definición~\ref{def:derivado}; el recíproco es la Proposición~\ref{prop:sin-perdida} aplicada a cada variable. La segunda afirmación se sigue de que cada escala de la Definición~\ref{def:escalas} tiene un atributo por cada valor de~$V_m$.
-\end{proof}
-
-En el pipeline, por tanto, toda la pérdida de información ocurre en la discretización (\S\ref{sec:discretizacion}); el escalado es reversible. Como referencia de tamaño: con las 30~variables numéricas de Breast Cancer Wisconsin y $k = 11$ intervalos por variable (la regla de Sturges para $n = 569$, \S\ref{sec:numero-intervalos}), el contexto tiene a lo sumo $30 \cdot 11 = 330$ atributos.
+Así, toda la pérdida de información del pipeline ocurre en la discretización. Con las 30~variables de Breast Cancer Wisconsin y $k = 11$ intervalos por variable, el contexto tiene a lo sumo 330~atributos.
 
 
 \subsection{Discretización}
 \label{sec:discretizacion}
 
-Las escalas necesitan un conjunto finito de valores con significado. Una variable continua, como el radio de un núcleo celular, toma casi tantos valores distintos como objetos hay, y escalarla directamente produciría casi una columna por objeto. La discretización agrupa los valores en pocos intervalos ordenados.
+Una variable continua toma casi tantos valores distintos como objetos hay, y escalarla directamente daría casi una columna por objeto. La discretización agrupa los valores en pocos intervalos ordenados.
 
 \begin{definicion}[discretización por puntos de corte]\label{def:discretizacion}
-Sea $x \colon G \rightharpoonup \R$ una variable numérica y sean $c_0 < c_1 < \dots < c_k$ puntos de corte con $c_0 \le \min x$ y $c_k \ge \max x$. Los intervalos son
-\[
-  I_0 = [c_0, c_1], \qquad I_j = (c_j, c_{j+1}] \quad (1 \le j \le k - 1),
-\]
-y la \emph{discretización} asigna a cada $g \in D_x$ el índice del intervalo que contiene su valor: $\delta(g) = j$ si y solo si $x(g) \in I_j$. La nueva variable~$\delta$ toma valores en $\{0, 1, \dots, k - 1\}$.
+Dados cortes $c_0 < c_1 < \dots < c_k$ con $c_0 \le \min x$ y $c_k \ge \max x$, los intervalos son $I_0 = [c_0, c_1]$ e $I_j = (c_j, c_{j+1}]$ para $1 \le j < k$, y la discretización asigna a cada objeto el índice $\delta(g) = j$ del intervalo que contiene a~$x(g)$. Es la convención de pandas.
 \end{definicion}
-
-Es la convención de pandas: intervalos cerrados por la derecha, y el primero también por la izquierda. Algunos métodos consiguen lo mismo poniendo $c_0$ un poco por debajo del mínimo, o $c_0 = -\infty$.
 
 \begin{proposicion}[la discretización conserva el orden]\label{prop:orden}
 Si $x(g) \le x(h)$, entonces $\delta(g) \le \delta(h)$.
 \end{proposicion}
 
-\begin{proof}
-Sean $\delta(g) = j$ y $\delta(h) = l$, y supóngase que $l < j$. Como $j \ge 1$, el intervalo~$I_j$ es abierto por la izquierda, así que $x(g) > c_j$. Por otro lado, $x(h) \le c_{l+1} \le c_j$, porque $l + 1 \le j$ y los cortes son crecientes. Entonces $x(h) \le c_j < x(g)$, lo que contradice que $x(g) \le x(h)$.
-\end{proof}
-
-Esta proposición justifica aplicar una escala ordinal a los códigos de la discretización: el orden de los códigos es el orden de los valores originales. Además, da a cada atributo ordinal una lectura en términos de la variable original:
-\[
-  g \in (\delta{\le}j)' \iff \delta(g) \le j \iff x(g) \in I_0 \cup \dots \cup I_j \iff x(g) \le c_{j+1}.
-\]
-Por ejemplo, si los cortes del radio son 11.19, 14.17, 17.13 y~20.1, el atributo \texttt{radio<=1} significa \enquote{radio${}\le 17.13$} (ver \S\ref{sec:ejemplo}). La discretización es el único paso con pérdida: $\delta$ no es inyectiva, y los objetos cuyos valores caen en el mismo intervalo se vuelven indistinguibles en esa variable.
-
-Los tres métodos que implementa el proyecto difieren en cómo eligen los cortes.
-
-\subsubsection*{Intervalos de igual ancho}
+Por eso se puede aplicar una escala ordinal a los códigos, y cada atributo ordinal se lee en la variable original: $\delta(g) \le j$ si y solo si $x(g) \le c_{j+1}$. Con los cortes del radio de la \S\ref{sec:ejemplo}, por ejemplo, \texttt{radio<=1} significa \enquote{radio${}\le 17.13$}. La discretización es el único paso con pérdida: los objetos cuyos valores caen en un mismo intervalo se vuelven indistinguibles en esa variable. El proyecto ofrece tres formas de elegir los cortes.
 
 \begin{definicion}[igual ancho]\label{def:ancho}
-Con $a = \min x$, $b = \max x$ y $h = (b - a)/k$, los cortes son $c_j = a + jh$ para $j = 0, \dots, k$.
+$c_j = a + j(b - a)/k$, con $a = \min x$ y $b = \max x$. Todos los intervalos miden lo mismo, pero un valor atípico estira el rango y puede dejar casi todos los objetos en uno o dos intervalos.
 \end{definicion}
 
-Todos los intervalos miden lo mismo, pero el número de objetos de cada uno puede ser muy desigual. El método es sensible a los valores atípicos: un solo valor extremo estira el rango $[a, b]$ y puede dejar casi todos los objetos en uno o dos intervalos, y otros vacíos.
-
-\subsubsection*{Intervalos de igual frecuencia}
-
-\begin{definicion}[cuantil empírico e igual frecuencia]\label{def:frecuencia}
-Sean $x_{(0)} \le x_{(1)} \le \dots \le x_{(n-1)}$ los valores ordenados. Para $p \in [0, 1]$ sea $t = (n - 1)p$. El \emph{cuantil empírico} con interpolación lineal es
-\[
-  \hat{Q}(p) = x_{(\lfloor t \rfloor)} + \bigl(t - \lfloor t \rfloor\bigr)\bigl(x_{(\lfloor t \rfloor + 1)} - x_{(\lfloor t \rfloor)}\bigr),
-\]
-con $\hat{Q}(1) = x_{(n-1)}$. La discretización de \emph{igual frecuencia} usa los cortes $c_j = \hat{Q}(j/k)$, para $j = 0, \dots, k$.
+\begin{definicion}[igual frecuencia]\label{def:frecuencia}
+Los cortes son los cuantiles empíricos $c_j = \hat{Q}(j/k)$, con la interpolación lineal que usan por defecto NumPy y pandas, el tipo~7 de \textcite{hyndman1996}. Con $k = 4$, los cortes interiores son los cuartiles.
 \end{definicion}
-
-Con $k = 4$, los cortes interiores son los cuartiles $q_1, q_2, q_3$, que es el caso que menciona el plan del proyecto. Esta es la definición de cuantil que usan por defecto NumPy y pandas: el tipo~7 de \textcite{hyndman1996}.
 
 \begin{proposicion}[intervalos balanceados]\label{prop:balance}
-Si los $n$~valores son distintos dos a dos, entonces, en aritmética exacta, cada intervalo de igual frecuencia contiene $\lfloor n/k \rfloor$ o $\lceil n/k \rceil$ objetos.
+Si los $n$~valores son distintos, cada intervalo de igual frecuencia contiene, en aritmética exacta, $\lfloor n/k \rfloor$ o $\lceil n/k \rceil$ objetos.
 \end{proposicion}
 
-\begin{proof}
-Como los valores son distintos, $\hat{Q}$ es estrictamente creciente y los cortes son distintos. Sea $t_j = (n - 1)j/k$ y sea $N_j$ el número de valores menores o iguales que~$c_j$. Si $t_j$ es entero, $c_j = x_{(t_j)}$; si no, $c_j$ está estrictamente entre $x_{(\lfloor t_j \rfloor)}$ y el valor siguiente. En ambos casos los valores menores o iguales que~$c_j$ son exactamente los de posición $0, 1, \dots, \lfloor t_j \rfloor$, así que $N_j = \lfloor t_j \rfloor + 1$ para $0 \le j \le k$.
-
-Sea $a = (n - 1)/k$. El primer intervalo, que es cerrado y empieza en el mínimo, contiene $N_1 = \lfloor a \rfloor + 1$ objetos, y para $1 \le j \le k - 1$ el intervalo~$I_j$ contiene
-\[
-  N_{j+1} - N_j = \lfloor (j + 1)a \rfloor - \lfloor ja \rfloor \in \{ \lfloor a \rfloor, \lfloor a \rfloor + 1 \}.
-\]
-Esto último se debe a que, si se escriben $y = \lfloor y \rfloor + \alpha$ y $a = \lfloor a \rfloor + \beta$ con $\alpha, \beta \in [0, 1)$, entonces $\lfloor y + a \rfloor - \lfloor y \rfloor = \lfloor a \rfloor + \lfloor \alpha + \beta \rfloor$, y $\alpha + \beta \in [0, 2)$. Así, todos los tamaños están en $\{ \lfloor a \rfloor, \lfloor a \rfloor + 1 \}$ y suman $N_k = n$.
-\begin{itemize}
-  \item Si $k$ no divide a~$n$, se escribe $n = qk + s$ con $1 \le s \le k - 1$. Entonces $a = q + (s - 1)/k$, de modo que $\lfloor a \rfloor = q = \lfloor n/k \rfloor$ y $\lfloor a \rfloor + 1 = \lceil n/k \rceil$.
-  \item Si $n = qk$, entonces $\lfloor a \rfloor = q - 1$. Todos los tamaños son a lo sumo~$q$ y los $k$~tamaños suman~$qk$, así que todos valen $q = n/k$. \qedhere
-\end{itemize}
-\end{proof}
-
-\begin{observacion}[empates y redondeo]\label{obs:empates}
-Si hay valores repetidos (por ejemplo, una variable con muchos ceros), varios cuantiles pueden coincidir. La implementación elimina los cortes repetidos, así que quedan menos de $k$~intervalos y algunos pueden quedar vacíos. Por otra parte, la Proposición~\ref{prop:balance} vale en aritmética exacta: cuando $t_j$ es entero, el corte calculado en punto flotante puede quedar un error de redondeo por debajo del valor~$x_{(t_j)}$, y ese objeto pasa al intervalo siguiente. Por eso, en la práctica, algunos intervalos pueden diferir en un objeto del tamaño que predice la proposición.
+\begin{observacion}[empates]\label{obs:empates}
+Con valores repetidos, varios cuantiles pueden coincidir; la implementación elimina los cortes repetidos, así que pueden quedar menos de $k$~intervalos. Por redondeo, algún intervalo puede diferir en un objeto del tamaño de la Proposición~\ref{prop:balance}.
 \end{observacion}
 
-\subsubsection*{\texorpdfstring{$k$}{k}-medias en una dimensión}
-
 \begin{definicion}[$k$-medias en una dimensión]\label{def:kmedias}
-Dados los valores observados $x_1, \dots, x_n \in \R$, se buscan una partición en grupos $C_1, \dots, C_k$ y centroides $\mu_1, \dots, \mu_k$ que minimicen la suma de cuadrados dentro de los grupos
-\[
-  \SSE(C, \mu) = \sum_{i=1}^{k} \sum_{x \in C_i} (x - \mu_i)^2.
-\]
-El \emph{algoritmo de Lloyd} \parencite{lloyd1982} parte de unos centroides iniciales y repite dos pasos hasta que los centroides no cambian:
-\begin{enumerate}
-  \item \emph{asignación:} cada valor se asigna al grupo de su centroide más cercano;
-  \item \emph{actualización:} cada centroide se reemplaza por la media de su grupo; un grupo vacío conserva su centroide.
-\end{enumerate}
+Se buscan grupos $C_1, \dots, C_k$ y centroides $\mu_1, \dots, \mu_k$ que minimicen $\SSE(C, \mu) = \sum_{i} \sum_{x \in C_i} (x - \mu_i)^2$. El \emph{algoritmo de Lloyd} \parencite{lloyd1982} alterna dos pasos hasta que los centroides no cambian: asignar cada valor al centroide más cercano y reemplazar cada centroide por la media de su grupo.
 \end{definicion}
 
 \begin{lema}[la media minimiza la suma de cuadrados]\label{lem:media}
-Sea $S$ un multiconjunto finito y no vacío de reales con media~$\bar{s}$. Para todo $c \in \R$,
-\[
-  \sum_{x \in S} (x - c)^2 = \sum_{x \in S} (x - \bar{s})^2 + \lvert S \rvert \, (\bar{s} - c)^2,
-\]
-así que el mínimo se alcanza únicamente en $c = \bar{s}$.
+Si $S$ es un multiconjunto finito de reales con media~$\bar{s}$, para todo $c \in \R$ se tiene $\sum_{x \in S} (x - c)^2 = \sum_{x \in S} (x - \bar{s})^2 + \lvert S \rvert \, (\bar{s} - c)^2$.
 \end{lema}
 
-\begin{proof}
-Se escribe $x - c = (x - \bar{s}) + (\bar{s} - c)$ y se desarrolla el cuadrado. El término cruzado suma $2(\bar{s} - c)\sum_{x \in S}(x - \bar{s})$, que vale~0 por la definición de la media.
-\end{proof}
-
 \begin{teorema}[convergencia del algoritmo de Lloyd]\label{teo:lloyd}
-\leavevmode
-\begin{enumerate}
-  \item La SSE no aumenta en ningún paso del algoritmo.
-  \item Si en una iteración cambia algún centroide, la SSE disminuye estrictamente.
-  \item En consecuencia, los centroides dejan de cambiar después de un número finito de iteraciones.
-\end{enumerate}
+La SSE no aumenta en ningún paso, disminuye estrictamente en cada iteración en que cambia algún centroide, y los centroides dejan de cambiar después de un número finito de iteraciones.
 \end{teorema}
 
-\begin{proof}
-Sea $P_t$ la partición que produce el paso de asignación de la iteración~$t$, y sean $\mu^{(t)}$ los centroides después de su paso de actualización; $\mu^{(0)}$ son los iniciales. Para una partición~$P$, sea $W(P)$ la SSE de~$P$ calculada con las medias de sus propios grupos (los grupos vacíos aportan~0).
-\begin{itemize}
-  \item \emph{Asignación.} Cada valor pasa al grupo de un centroide de~$\mu^{(t-1)}$ que esté a distancia mínima, así que su término $(x - \mu_i)^2$ no aumenta. Por tanto $\SSE(P_t, \mu^{(t-1)}) \le \SSE(P_{t-1}, \mu^{(t-1)})$.
-  \item \emph{Actualización.} Por el Lema~\ref{lem:media}, reemplazar el centroide de un grupo no vacío por su media no aumenta el término de ese grupo, y lo disminuye estrictamente si el centroide cambia. Los grupos vacíos conservan su centroide y aportan~0. Así, $\SSE(P_t, \mu^{(t)}) \le \SSE(P_t, \mu^{(t-1)})$, con desigualdad estricta si $\mu^{(t)} \ne \mu^{(t-1)}$.
-\end{itemize}
-Como los centroides de los grupos no vacíos de~$P_t$ son sus medias, $\SSE(P_t, \mu^{(t)}) = W(P_t)$. Encadenando las dos desigualdades, para $t \ge 2$,
-\[
-  W(P_t) \le \SSE\bigl(P_t, \mu^{(t-1)}\bigr) \le \SSE\bigl(P_{t-1}, \mu^{(t-1)}\bigr) = W(P_{t-1}),
-\]
-con desigualdad estricta si los centroides cambiaron en la iteración~$t$. Esto prueba 1 y~2. Para~3: mientras los centroides sigan cambiando, la sucesión $W(P_1) > W(P_2) > \dotsb$ es estrictamente decreciente, así que las particiones $P_1, P_2, \dots$ son distintas dos a dos. Como hay a lo sumo $k^n$~formas de repartir $n$~valores en $k$~grupos, los centroides solo pueden cambiar un número finito de veces.
-\end{proof}
+La asignación no aumenta ningún término de la SSE, la actualización tampoco, por el Lema~\ref{lem:media}, y como hay finitas formas de repartir los valores, la SSE no puede bajar indefinidamente.
 
-\begin{observacion}[óptimo local e inicialización]\label{obs:optimo-local}
-El punto fijo al que llega el algoritmo es un óptimo local de la SSE, no necesariamente el global, y depende de los centroides iniciales. La implementación los inicializa de forma determinista en los percentiles $100 \cdot i/(k + 1)$, para $i = 1, \dots, k$, así que el resultado es reproducible. En una dimensión el óptimo global se puede calcular exactamente con programación dinámica \parencite{fisher1958, wang2011}, lo que queda como posible mejora. En cartografía, este mismo problema se conoce como \emph{cortes naturales de Jenks}.
+\begin{observacion}[óptimo local]\label{obs:optimo-local}
+El resultado es un óptimo local, que depende de los centroides iniciales; la implementación los pone en percentiles fijos, así que es reproducible. En una dimensión, el óptimo global se puede calcular con programación dinámica \parencite{fisher1958, wang2011}.
 \end{observacion}
 
-\begin{proposicion}[en una dimensión, las regiones de asignación son intervalos]\label{prop:voronoi}
-Sean $\mu_1 < \mu_2 < \dots < \mu_k$ y $b_i = (\mu_i + \mu_{i+1})/2$ para $1 \le i \le k - 1$, con $b_0 = -\infty$ y $b_k = +\infty$. Un real~$x$ tiene a~$\mu_j$ como centroide más cercano (posiblemente empatado con otro) si y solo si $b_{j-1} \le x \le b_j$.
+\begin{proposicion}[regiones de asignación]\label{prop:voronoi}
+Si $\mu_1 < \dots < \mu_k$, el centroide más cercano a~$x$ es~$\mu_j$ si y solo si $x$ está entre los puntos medios $(\mu_{j-1} + \mu_j)/2$ y $(\mu_j + \mu_{j+1})/2$.
 \end{proposicion}
 
-\begin{proof}
-Para $i < j$, como $\mu_j - \mu_i > 0$,
-\[
-  \lvert x - \mu_j \rvert \le \lvert x - \mu_i \rvert
-  \iff (x - \mu_j)^2 \le (x - \mu_i)^2
-  \iff 2x(\mu_j - \mu_i) \ge \mu_j^2 - \mu_i^2
-  \iff x \ge \frac{\mu_i + \mu_j}{2},
-\]
-y de forma análoga, para $i > j$, la desigualdad equivale a $x \le (\mu_i + \mu_j)/2$. Por tanto, $\mu_j$ es el más cercano si y solo si $x \ge (\mu_i + \mu_j)/2$ para todo $i < j$ y $x \le (\mu_i + \mu_j)/2$ para todo $i > j$. Como $(\mu_i + \mu_j)/2$ crece con~$\mu_i$, la condición más exigente de cada lado es la de $i = j - 1$ y la de $i = j + 1$, es decir, $x \ge b_{j-1}$ y $x \le b_j$.
-\end{proof}
+Por eso \texttt{kmeans\_1d}, al terminar, corta en los puntos medios entre centroides consecutivos, y los códigos conservan el orden (Proposición~\ref{prop:orden}).
 
-Por eso, una vez que el algoritmo converge, basta con cortar en los puntos medios $b_1, \dots, b_{k-1}$ entre centroides ordenados: equivale a asignar cada valor a su centroide más cercano. Los empates en un punto medio van al intervalo inferior, porque los intervalos son cerrados por la derecha. Por la Proposición~\ref{prop:orden}, los códigos resultantes conservan el orden.
 
 \subsection{Número de intervalos}
 \label{sec:numero-intervalos}
 
-Los tres métodos necesitan el número~$k$ de intervalos. Con pocos intervalos se pierden distinciones entre objetos (Corolario~\ref{cor:filas}); con muchos, el contexto tiene más atributos, cada uno con menos objetos, y el número de conceptos puede crecer mucho, que es justamente el principal reto del dataset de Spotify. Las reglas de esta sección vienen de la teoría de histogramas: eligen $k$ para que el histograma estime bien la densidad de la variable.
+Con pocos intervalos se pierden distinciones entre objetos (Corolario~\ref{cor:filas}); con muchos, el contexto tiene más atributos y el número de conceptos puede crecer mucho, que es el principal reto del dataset de Spotify. Las reglas siguientes vienen de la teoría de histogramas.
 
 \begin{regla}[\cite{sturges1926}]\label{regla:sturges}
-$k = \lceil \log_2 n \rceil + 1$.
+$k = \lceil \log_2 n \rceil + 1$. Sturges idealizó el histograma de una variable normal como una binomial con $k$~intervalos, cuyas frecuencias suman $2^{k-1} = n$. Con $n = 569$ da $k = 11$.
 \end{regla}
 
-\begin{proof}[Justificación]
-Sturges idealizó el histograma de una variable aproximadamente normal como una distribución binomial: con $k$~intervalos, las frecuencias son los coeficientes $\binom{k-1}{i}$, para $i = 0, \dots, k - 1$. Por el teorema del binomio, el total es
-\[
-  n = \sum_{i=0}^{k-1} \binom{k-1}{i} = (1 + 1)^{k-1} = 2^{k-1},
-\]
-de donde $k = 1 + \log_2 n$, y la regla redondea hacia arriba. La implementación calcula $\lceil \log_2 n + 1 \rceil$, que es lo mismo, porque $\lceil y + 1 \rceil = \lceil y \rceil + 1$ para todo real~$y$. Con $n = 101$ da $k = 8$, y con $n = 569$ (Breast Cancer Wisconsin) da $k = 11$.
-\end{proof}
-
-\begin{teorema}[\cite{scott1979}; se enuncia sin demostración]\label{teo:amise}
-Sea $f$ la densidad de la variable, suficientemente suave y con $R(f') = \int f'(x)^2 \, dx$ finito. Para un histograma con intervalos de ancho~$h$ construido con $n$~observaciones, el error cuadrático medio integrado admite la aproximación asintótica
-\[
-  \AMISE(h) = \frac{1}{nh} + \frac{h^2}{12} \, R(f').
-\]
+\begin{teorema}[\cite{scott1979}]\label{teo:amise}
+Si la densidad~$f$ es suave y $R(f') = \int f'(x)^2 \, dx$ es finito, el error cuadrático medio integrado de un histograma de ancho~$h$ con $n$~datos es, asintóticamente, $\AMISE(h) = 1/(nh) + h^2 R(f')/12$.
 \end{teorema}
 
-El primer término es la varianza (un intervalo estrecho contiene pocos datos) y el segundo es el sesgo al cuadrado (un intervalo ancho aplana la densidad).
-
 \begin{corolario}[ancho óptimo]\label{cor:ancho-optimo}
-La AMISE se minimiza en
-\[
-  h^{*} = \left( \frac{6}{n \, R(f')} \right)^{1/3}.
-\]
+La AMISE se minimiza en $h^{*} = \bigl( 6 / (n R(f')) \bigr)^{1/3}$, que decrece como $n^{-1/3}$; la regla de Sturges, en cambio, crece solo como $\log_2 n$.
 \end{corolario}
-
-\begin{proof}
-Las dos primeras derivadas son
-\[
-  \AMISE'(h) = -\frac{1}{nh^2} + \frac{h}{6} \, R(f'), \qquad
-  \AMISE''(h) = \frac{2}{nh^3} + \frac{R(f')}{6}.
-\]
-La primera se anula exactamente cuando $h^3 = 6/(n R(f'))$, y la segunda es positiva para $h > 0$, así que la función es convexa en $h > 0$ y ese punto es su mínimo global.
-\end{proof}
-
-El ancho óptimo decrece como $n^{-1/3}$, así que el número de intervalos sobre un rango fijo crece como $n^{1/3}$. La regla de Sturges crece solo como $\log_2 n$: para muestras grandes produce comparativamente pocos intervalos.
 
 \begin{corolario}[regla de Scott]\label{cor:scott}
-Si $f$ es una densidad normal con desviación estándar~$\sigma$, entonces $R(f') = 1/(4\sqrt{\pi}\,\sigma^3)$ y
-\[
-  h^{*} = \bigl( 24\sqrt{\pi} \bigr)^{1/3} \sigma \, n^{-1/3} \approx 3.49 \, \sigma \, n^{-1/3}.
-\]
+Para una normal con desviación~$\sigma$, $R(f') = 1/(4\sqrt{\pi}\,\sigma^3)$ y $h^{*} = (24\sqrt{\pi})^{1/3} \sigma\, n^{-1/3} \approx 3.49\, \sigma\, n^{-1/3}$. La implementación estima~$\sigma$ con la desviación estándar muestral.
 \end{corolario}
 
-\begin{proof}
-Para la normal de media~$\mu$, $f'(x) = -\frac{x - \mu}{\sigma^2} f(x)$, luego
-\[
-  R(f') = \frac{1}{\sigma^4} \int (x - \mu)^2 f(x)^2 \, dx,
-  \qquad
-  f(x)^2 = \frac{1}{2\pi\sigma^2} \, e^{-(x - \mu)^2/\sigma^2}.
-\]
-La función $e^{-(x - \mu)^2/\sigma^2}$ es $s\sqrt{2\pi}$ veces la densidad normal de media~$\mu$ y desviación estándar $s = \sigma/\sqrt{2}$, cuya varianza es $s^2 = \sigma^2/2$. Por tanto,
-\[
-  \int (x - \mu)^2 f(x)^2 \, dx
-  = \frac{s\sqrt{2\pi} \cdot s^2}{2\pi\sigma^2}
-  = \frac{\sqrt{2\pi}\,\sigma^3}{2\sqrt{2} \cdot 2\pi\sigma^2}
-  = \frac{\sigma}{4\sqrt{\pi}},
-\]
-y $R(f') = 1/(4\sqrt{\pi}\,\sigma^3)$. Sustituyendo en el Corolario~\ref{cor:ancho-optimo} se obtiene
-\[
-  h^{*} = \left( \frac{24\sqrt{\pi}\,\sigma^3}{n} \right)^{1/3} = \bigl( 24\sqrt{\pi} \bigr)^{1/3} \sigma \, n^{-1/3},
-  \qquad \bigl( 24\sqrt{\pi} \bigr)^{1/3} \approx 3.4908. \qedhere
-\]
-\end{proof}
-
-La implementación usa la desviación estándar muestral~$s$ (con divisor $n - 1$) como estimación de~$\sigma$.
-
 \begin{regla}[\cite{freedman1981}]\label{regla:fd}
-$h = 2 \IQR \, n^{-1/3}$, donde $\IQR = \hat{Q}(0.75) - \hat{Q}(0.25)$ es el rango intercuartílico.
+$h = 2 \IQR\, n^{-1/3}$, con $\IQR$ el rango intercuartílico. Es la variante robusta de la regla de Scott: el IQR, a diferencia de la desviación estándar, no se ve afectado por los valores atípicos.
 \end{regla}
 
-Es una variante robusta de la regla de Scott: la desviación estándar se ve muy afectada por los valores atípicos, y el rango intercuartílico no. Para una normal, $\IQR \approx 1.349\,\sigma$, así que la regla de Scott escrita con el IQR sería $h \approx 2.59 \IQR \, n^{-1/3}$; Freedman y Diaconis propusieron la constante~2. Ambas reglas tienen el orden~$n^{-1/3}$ del Corolario~\ref{cor:ancho-optimo}.
-
 \begin{observacion}[del ancho al número de intervalos]\label{obs:ancho-k}
-Las reglas de Scott y de Freedman--Diaconis dan un ancho~$h$; el número de intervalos es $k = \lceil (\max x - \min x)/h \rceil$. Si la dispersión es nula ($s = 0$ o $\IQR = 0$), el ancho sería~0, y la implementación usa entonces la regla de Sturges. En todos los casos, \texttt{discretize} obliga a que $k \ge 2$. Estas reglas se diseñaron para histogramas de igual ancho: usarlas para elegir $k$ con igual frecuencia o con $k$-medias es una heurística razonable, no un resultado de optimalidad.
+Con un ancho~$h$, $k = \lceil (\max x - \min x)/h \rceil$; si la dispersión es nula se usa la regla de Sturges, y \texttt{discretize} obliga a que $k \ge 2$. Las reglas se diseñaron para intervalos de igual ancho: usarlas con igual frecuencia o con $k$-medias es una heurística.
 \end{observacion}
 
 
 \subsection{Ejemplo completo}
 \label{sec:ejemplo}
 
-Se toman seis objetos con dos variables numéricas y una categórica (valores ilustrativos, inspirados en Breast Cancer Wisconsin). La tabla de la izquierda tiene los valores originales y la de la derecha sus códigos después del primer paso.
+Se toman seis objetos con dos variables numéricas y una categórica (valores ilustrativos, inspirados en Breast Cancer Wisconsin). La tabla de la izquierda tiene los valores originales y la de la derecha sus códigos después de discretizar.
 
 \begin{center}
+\small
 \begin{tabular}{cccc}
   \toprule
   Objeto & radio & textura & diagnóstico \\
@@ -431,11 +212,10 @@ Se toman seis objetos con dos variables numéricas y una categórica (valores il
 \end{tabular}
 \end{center}
 
-\paragraph{Paso 1: discretización.} Se usan intervalos de igual ancho con $k = 3$. Para el radio, $a = 11.2$, $b = 20.1$ y $h = 8.9/3 \approx 2.97$, así que los cortes son 11.2, 14.17, 17.13 y~20.1 (pandas baja el primero a 11.19 para incluir el mínimo). Para la textura, los cortes son 14.1, 17.73, 21.37 y~25.0.
-
-\paragraph{Paso 2: escalado.} Se usa la escala ordinal creciente para el radio y la textura, cuyos códigos están ordenados (Proposición~\ref{prop:orden}), y la escala nominal para el diagnóstico. El contexto formal resultante tiene $\lvert G \rvert = 6$ objetos y $\lvert M \rvert = 8$ atributos:
+Con intervalos de igual ancho y $k = 3$, los cortes del radio son 11.2, 14.17, 17.13 y~20.1 (pandas baja el primero a 11.19 para incluir el mínimo), y los de la textura 14.1, 17.73, 21.37 y~25.0. Con la escala ordinal creciente para el radio y la textura, y la nominal para el diagnóstico, el contexto tiene $\lvert G \rvert = 6$ objetos y $\lvert M \rvert = 8$ atributos:
 
 \begin{center}
+\small
 \begin{tabular}{c|ccc|ccc|cc}
   & \multicolumn{3}{c|}{radio} & \multicolumn{3}{c|}{textura} & \multicolumn{2}{c}{diagnóstico} \\
   & $\le 0$ & $\le 1$ & $\le 2$ & $\le 0$ & $\le 1$ & $\le 2$ & $=\mathrm{B}$ & $=\mathrm{M}$ \\ \hline
@@ -448,30 +228,4 @@ Se toman seis objetos con dos variables numéricas y una categórica (valores il
 \end{tabular}
 \end{center}
 
-Cómo se leen en la tabla los resultados anteriores:
-\begin{itemize}
-  \item Las columnas \enquote{radio${}\le 2$} y \enquote{textura${}\le 2$} están llenas: son los atributos universales del Corolario~\ref{cor:universal}.
-  \item La columna \enquote{radio${}\le 0$}, con los objetos $g_1, g_2, g_4$, está contenida en \enquote{radio${}\le 1$}, que añade~$g_6$: es la cadena de la Proposición~\ref{prop:cadena}.
-  \item Las dos columnas del diagnóstico separan los objetos en $\{g_1, g_2, g_4, g_6\}$ y $\{g_3, g_5\}$: es la partición de la Proposición~\ref{prop:particion}.
-  \item \enquote{radio${}\le 1$} significa \enquote{radio${}\le 17.13$}, el extremo superior del intervalo~1 (\S\ref{sec:discretizacion}).
-  \item $g_3$ y $g_5$ tienen la misma fila aunque sus valores originales son distintos: tras discretizar son indistinguibles. Es la pérdida de información que introduce la discretización (Corolario~\ref{cor:filas}).
-\end{itemize}
-
-El código que produce este ejemplo está en la documentación de \path{scaler.py} (\path{docs/codigo/preprocessing/scaler.md}).
-
-\subsection{Resumen de la fase}
-\label{sec:resumen}
-
-\begin{center}
-\small
-\begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X l@{}}
-  \toprule
-  Paso & Objeto matemático & ¿Pierde información? & Código \\
-  \midrule
-  Tabla original & Contexto multivaluado $(G, M, W, I)$ (\S\ref{sec:escalado}) & --- & \texttt{pd.DataFrame} \\
-  Discretización & Variable ordenada~$\delta$ con $k$~intervalos (\S\ref{sec:discretizacion} y \S\ref{sec:numero-intervalos}) & Sí: los valores de un mismo intervalo se confunden & \texttt{discretize} \\
-  Escalado & Contexto derivado $(G, N, J)$ (\S\ref{sec:escalado} y \S\ref{sec:propiedades-escalado}) & No (Proposición~\ref{prop:sin-perdida}) & \texttt{scaling} \\
-  Matriz de incidencia & $X \in \{0, 1\}^{n \times p}$ (\S\ref{sec:contextos}) & No (Observación~\ref{obs:representacion}) & \texttt{DataFrame} booleano \\
-  \bottomrule
-\end{tabularx}
-\end{center}
+Las columnas \enquote{radio${}\le 2$} y \enquote{textura${}\le 2$} están llenas (Corolario~\ref{cor:universal}); \enquote{radio${}\le 0$} está contenida en \enquote{radio${}\le 1$} (Proposición~\ref{prop:cadena}); las dos columnas del diagnóstico parten los objetos en $\{g_1, g_2, g_4, g_6\}$ y $\{g_3, g_5\}$ (Proposición~\ref{prop:particion}); y $g_3$ y~$g_5$ tienen la misma fila aunque sus valores originales son distintos, que es la pérdida de información de la discretización (Corolario~\ref{cor:filas}). El código que produce este ejemplo está en \path{docs/codigo/preprocessing/scaler.md}.

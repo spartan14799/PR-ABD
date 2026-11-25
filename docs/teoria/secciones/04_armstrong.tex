@@ -1,5 +1,78 @@
 \section{Dependencias funcionales y axiomas de Armstrong}
 \label{sec:armstrong}
 
-\emph{Pendiente: esta sección se completará en la Fase~3 (implicaciones).}
+Las bases de datos relacionales usan, sobre la tabla original, una noción parecida a las implicaciones: las dependencias funcionales. Esta sección presenta los axiomas de Armstrong, que deducen implicaciones con reglas sintácticas y son equivalentes a la consecuencia de la \S\ref{sec:implicaciones-def}; el algoritmo de clausura que usa el código; la traducción entre dependencias funcionales e implicaciones, y el cálculo de claves candidatas. La clausura está implementada en \path{src/implications/armstrong.py}; las dependencias y las claves son la parte de la Fase~3 que falta implementar, y esta sección es su fundamento.
 
+
+\subsection{Axiomas de Armstrong y clausura}
+\label{sec:axiomas}
+
+\begin{definicion}[reglas de Armstrong]\label{def:armstrong}
+Para $X, Y, Z \subseteq M$: (R1)~\emph{reflexividad}: si $Y \subseteq X$, se obtiene $X \to Y$; (R2)~\emph{aumentación}: de $X \to Y$ se obtiene $X \cup Z \to Y \cup Z$; (R3)~\emph{transitividad}: de $X \to Y$ e $Y \to Z$ se obtiene $X \to Z$. Se escribe $\mathcal{L} \vdash X \to Y$ si hay una sucesión finita de implicaciones que termina en $X \to Y$ y en la que cada una está en~$\mathcal{L}$ o sale de las anteriores con una regla.
+\end{definicion}
+
+De ellas se derivan la unión (de $X \to Y$ y $X \to Z$, $X \to Y \cup Z$), la descomposición (de $X \to Y \cup Z$, $X \to Y$) y la pseudotransitividad (de $X \to Y$ y $W \cup Y \to Z$, $W \cup X \to Z$).
+
+\begin{teorema}[\cite{armstrong1974}]\label{teo:armstrong}
+$\mathcal{L} \vdash X \to Y$ si y solo si $\mathcal{L} \models X \to Y$, si y solo si $Y \subseteq \mathcal{L}(X)$.
+\end{teorema}
+
+\begin{proof}
+La segunda equivalencia es la Proposición~\ref{prop:clausura-impl}. \emph{Corrección:} si $T$ respeta~$\mathcal{L}$, cada regla produce, a partir de implicaciones que $T$ respeta, otra que también respeta: (R1)~si $Y \subseteq X \subseteq T$, entonces $Y \subseteq T$; (R2)~si $X \cup Z \subseteq T$, entonces $Y \subseteq T$ y $Y \cup Z \subseteq T$; (R3)~si $X \subseteq T$, entonces $Y \subseteq T$ y $Z \subseteq T$. Por inducción, $T$ respeta todo lo que se deriva de~$\mathcal{L}$. \emph{Completitud:} con la sucesión~$W_s$ de la Proposición~\ref{prop:clausura-impl}, se ve que $\mathcal{L} \vdash X \to W_s$. Para $s = 0$ es (R1). Si $\mathcal{L} \vdash X \to U$, con $W_s \subseteq U$, y $(Z \to V) \in \mathcal{L}$ con $Z \subseteq W_s$, entonces $U \to Z$ por~(R1), $U \to V$ por~(R3), $U \to U \cup V$ por~(R2) y $X \to U \cup V$ por~(R3); haciendo esto con cada implicación aplicable se llega a $X \to W_{s+1}$. Así, $\mathcal{L} \vdash X \to \mathcal{L}(X)$, y si $Y \subseteq \mathcal{L}(X)$, (R1) y~(R3) dan $X \to Y$.
+\end{proof}
+
+La demostración es constructiva: cada cálculo de una clausura es una derivación con las reglas de Armstrong, en la que cada atributo agregado se justifica con una implicación de~$\mathcal{L}$. Por eso, en este proyecto, validar una implicación con los axiomas equivale a calcular una clausura.
+
+\begin{teorema}[LinClosure, \cite{beeri1979}]\label{teo:linclosure}
+Sea $W = X$ más las conclusiones de las implicaciones con premisa vacía. Cada implicación lleva un contador de los atributos de su premisa que faltan, cada atributo tiene la lista de implicaciones cuya premisa lo contiene, y una cola procesa una vez cada atributo de~$W$; cuando un contador llega a cero, los atributos nuevos de la conclusión se agregan a~$W$ y a la cola. El $W$ final es $\mathcal{L}(X)$, y se calcula con $O\bigl(\lvert M \rvert + \sum_{(Z \to V) \in \mathcal{L}} (\lvert Z \rvert + \lvert V \rvert)\bigr)$ operaciones.
+\end{teorema}
+
+\begin{proof}
+Un atributo entra a la cola solo cuando se agrega a~$W$, así que entra una vez, y cada contador cuenta los atributos de su premisa que aún no han salido de la cola. $W \subseteq \mathcal{L}(X)$, porque una conclusión se agrega solo cuando su premisa ya está en~$W$, y $\mathcal{L}(X)$ respeta~$\mathcal{L}$. Al final la cola está vacía, así que toda implicación con premisa contenida en~$W$ llegó a contador cero, o tenía premisa vacía, y su conclusión está en~$W$: $W$ respeta~$\mathcal{L}$ y contiene a~$X$, luego $\mathcal{L}(X) \subseteq W$. Las listas suman $\sum \lvert Z \rvert$ y se recorren una vez, y cada conclusión se agrega a lo sumo una vez.
+\end{proof}
+
+\path{armstrong.py} tiene dos versiones. \texttt{attribute\_closure(X, F)} construye los contadores en cada llamada. \texttt{ImplicationClosure} recibe las implicaciones una por una con \texttt{add(A, B)}, se llama como una función, \texttt{ic(X)}, y solo crea contadores para las implicaciones que toca cada llamada; es la que usa Guigues--Duquenne, que calcula muchas clausuras mientras la lista crece. Las dos tratan aparte las premisas vacías, cuyo contador nunca bajaría, y las pruebas las comparan con la sucesión de punto fijo en 5000~casos aleatorios.
+
+
+\subsection{Dependencias funcionales}
+\label{sec:dependencias}
+
+\begin{definicion}[dependencia funcional]\label{def:df}
+Una \emph{relación}~$r$ sobre un conjunto finito~$R$ de columnas es un conjunto finito de tuplas $t \colon R \to W$, sin repeticiones ni valores faltantes. La \emph{dependencia funcional} $X \to Y$, con $X, Y \subseteq R$, \emph{se cumple} en~$r$ si dos tuplas que coinciden en~$X$ coinciden en~$Y$: $t[X] = u[X]$ implica $t[Y] = u[Y]$ \parencite{maier1983, abiteboul1995}.
+\end{definicion}
+
+Por la Observación~\ref{obs:relacional}, una relación es un contexto multivaluado; las dependencias hablan de la tabla original, y las implicaciones de la Sección~\ref{sec:implicaciones}, del contexto escalado. En un \texttt{DataFrame} puede haber filas repetidas, y hay que quitarlas antes (\texttt{drop\_duplicates}).
+
+\begin{definicion}[contexto de pares]\label{def:pares}
+El \emph{contexto de pares} de~$r$ es $\K_r = (P_r, R, I_{=})$, donde $P_r$ son los pares $\{t, u\}$ de tuplas distintas y $\{t, u\} \mathrel{I_{=}} a$ si $t[a] = u[a]$. La fila de un par es su \emph{conjunto de acuerdo} $\operatorname{ag}(t, u) = \{ a \in R : t[a] = u[a] \}$.
+\end{definicion}
+
+\begin{teorema}[\cite{ganter1999, baixeries2014}]\label{teo:df-implicaciones}
+La dependencia funcional $X \to Y$ se cumple en~$r$ si y solo si la implicación $X \to Y$ es válida en~$\K_r$.
+\end{teorema}
+
+Las dos condiciones dicen lo mismo: todo par de tuplas cuyo conjunto de acuerdo contiene a~$X$ tiene un conjunto de acuerdo que contiene a~$Y$. En consecuencia, todo lo de las Secciones \ref{sec:conceptos} y~\ref{sec:implicaciones} se aplica a las dependencias: la clausura de~$X$ es $X^{+} = \bigcap \{ \operatorname{ag}(t, u) : X \subseteq \operatorname{ag}(t, u) \}$ (o $R$, si ningún par coincide en~$X$); la base de Guigues--Duquenne de~$\K_r$ es la lista más corta de dependencias de la que se deducen todas las de~$r$; y los axiomas de Armstrong son correctos y completos para las dependencias funcionales. Con la escala nominal, además, $X \to Y$ se cumple si y solo si, para cada tupla~$t$, la implicación $\{(a{=}t[a]) : a \in X\} \to \{(b{=}t[b]) : b \in Y\}$ es válida en el contexto derivado: una dependencia es la conjunción de una implicación entre valores por cada combinación de valores de~$X$.
+
+En la práctica, $\K_r$ tiene $n(n-1)/2$ pares (161\,596 con $n = 569$), pero solo importan los conjuntos de acuerdo distintos, que se calculan agrupando las tuplas por el valor de cada columna \parencite{mannila1994}. Las dependencias dependen de la discretización: con intervalos más gruesos en~$X$, más pares coinciden en~$X$ y es más difícil que $X \to Y$ se cumpla. Y como las implicaciones, una dependencia se rompe con un solo par que no la cumpla.
+
+\begin{ejemplo}[dependencias del ejemplo]\label{ej:df}
+Se toma la tabla discretizada de la \S\ref{sec:ejemplo} como relación sobre $R = \{\mathrm{r}, \mathrm{t}, \mathrm{d}\}$ (radio, textura y diagnóstico). Las filas de $g_3$ y~$g_5$ son iguales, así que quedan cinco tuplas y diez pares, con conjuntos de acuerdo $\{\mathrm{r}, \mathrm{d}\}$ (tres pares: los de $g_1$, $g_2$ y~$g_4$), $\{\mathrm{t}, \mathrm{d}\}$ (el par $\{g_1, g_6\}$), $\{\mathrm{t}\}$ (el par $\{g_2, g_3\}$), $\{\mathrm{d}\}$ (dos pares) y~$\emptyset$ (tres pares). Todo par que coincide en el radio coincide en el diagnóstico, así que se cumple radio${}\to{}$diagnóstico, que es toda la base de~$\K_r$. En cambio, $\{\mathrm{t}\}^{+} = \{\mathrm{t}, \mathrm{d}\} \cap \{\mathrm{t}\} = \{\mathrm{t}\}$: la textura no determina nada.
+\end{ejemplo}
+
+
+\subsection{Claves candidatas}
+\label{sec:claves}
+
+\begin{definicion}[superclave y clave candidata]\label{def:clave}
+Respecto de un conjunto~$\mathcal{F}$ de dependencias sobre~$R$, $X$ es una \emph{superclave} si $\mathcal{F}(X) = R$, y una \emph{clave candidata} si además es minimal; un atributo es \emph{primo} si está en alguna clave. Para una relación, $\mathcal{F}$ son las dependencias que se cumplen en ella y $\mathcal{F}(X) = X^{+}$.
+\end{definicion}
+
+\begin{proposicion}\label{prop:claves}
+(1)~$X$ es una superclave de~$r$ si y solo si no hay dos tuplas distintas que coincidan en~$X$, es decir, si $X$ corta a todos los conjuntos $R \setminus \operatorname{ag}(t, u)$; las claves candidatas son los conjuntos minimales que los cortan a todos, y basta usar los conjuntos de acuerdo maximales. (2)~Si, empezando con $K = R$, se quita cada atributo~$a$ tal que $K \setminus \{a\}$ sigue siendo superclave, el resultado es una clave candidata, calculada con $\lvert R \rvert$ clausuras. (3)~Un atributo~$a$ está en todas las claves si y solo si $a \notin \mathcal{F}(R \setminus \{a\})$.
+\end{proposicion}
+
+La parte~(1) es la definición escrita con los conjuntos de acuerdo. Para~(2), un subconjunto de algo que no es superclave tampoco lo es, porque la clausura es monótona, así que ningún atributo que no se pudo quitar antes se puede quitar después. Para~(3), si $R \setminus \{a\}$ es superclave contiene una clave sin~$a$, y si no lo es, ningún conjunto sin~$a$ lo es. Una relación puede tener exponencialmente muchas claves: con $R = \{A_1, \dots, A_k, B_1, \dots, B_k\}$ y las dependencias $A_i \to B_i$ y $B_i \to A_i$ hay $2^k$. \textcite{lucchesi1978} dan un algoritmo para hallarlas todas en tiempo polinomial en el tamaño de la entrada y en el número de claves, y muestran que decidir si hay una clave de a lo sumo $q$~atributos es NP-completo.
+
+\begin{ejemplo}[claves del ejemplo]\label{ej:claves}
+En el Ejemplo~\ref{ej:df}, los conjuntos de acuerdo maximales son $\{\mathrm{r}, \mathrm{d}\}$ y $\{\mathrm{t}, \mathrm{d}\}$, con complementos $\{\mathrm{t}\}$ y~$\{\mathrm{r}\}$, así que la única clave candidata es $\{\mathrm{r}, \mathrm{t}\}$: radio y textura están en todas las claves, y el diagnóstico en ninguna. Sin quitar las filas repetidas, $g_3$ y~$g_5$ coincidirían en todo y la tabla no tendría ninguna clave; por eso se trabaja con la relación sin repeticiones, o se conserva una columna que identifique cada fila.
+\end{ejemplo}

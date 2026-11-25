@@ -1,0 +1,27 @@
+\section{Resumen: teoría, código y pruebas}
+\label{sec:resumen-general}
+
+Cada resultado que usa el código tiene una función que lo implementa y una prueba automática en \path{tests/} que lo comprueba, en la mayoría de los casos contra una versión de fuerza bruta en cientos de contextos aleatorios.
+
+\begingroup
+\footnotesize
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{4.2cm} >{\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{8.1cm}@{}}
+  \toprule
+  Resultado & Código & Prueba \\
+  \midrule
+  \endhead
+  Escalas y contexto derivado (Proposiciones \ref{prop:particion} y~\ref{prop:sin-perdida}) & \texttt{scaling} & \texttt{test\_matriz\_de\_incidencia\_del\_ejemplo}, \texttt{test\_escala\_nominal\_da\_un\_\allowbreak atributo\_por\_variable}, \texttt{test\_escala\_ordinal\_no\_pierde\_informacion} \\
+  Discretización (Proposición~\ref{prop:orden}) & \texttt{discretize}, \texttt{cut\_methods} & \texttt{test\_metodos\_de\_corte}, \texttt{test\_los\_codigos\_conservan\_el\_orden}, \texttt{test\_discretize\_solo\_cambia\_\allowbreak las\_columnas\_numericas} \\
+  Número de intervalos (Reglas \ref{regla:sturges} y~\ref{regla:fd}, Corolario~\ref{cor:scott}) & \texttt{methods} & \texttt{test\_reglas\_para\_el\_numero\_de\_intervalos} \\
+  Derivación y conexión de Galois (Proposición~\ref{prop:derivacion}) & \texttt{extent}, \texttt{intent}, \texttt{intent\_from\_extent} & \texttt{test\_derivacion\_con\_nombres}, \texttt{test\_intensiones\_con\_las\_dos\_estrategias}, \texttt{test\_conexion\_de\_galois} \\
+  Clausura (Proposición~\ref{prop:clausura}) & \texttt{closure} & \texttt{test\_propiedades\_de\_la\_clausura} \\
+  NextClosure (Teorema~\ref{teo:nextclosure}) & \texttt{next\_closure} & \texttt{test\_recorre\_todas\_las\_intensiones\_una\_vez}, \texttt{test\_respeta\_el\_orden\_lectico} \\
+  Close-by-One (Teorema~\ref{teo:cbo}) & \texttt{concepts\_cbo} & \texttt{test\_conceptos\_coinciden\_con\_fuerza\_bruta}, \texttt{test\_mismo\_orden\_que\_next\_closure} \\
+  Diagrama de Hasse (Proposiciones \ref{prop:vecinos} y~\ref{prop:lectura}) & \texttt{make\_lattice}, \texttt{hasse\_layout}, \texttt{reduced\_labels} & \texttt{test\_aristas\_son\_la\_relacion\_de\_cobertura}, \texttt{test\_posiciones\_validas}, \texttt{test\_etiquetas\_reducidas} \\
+  Base de Guigues--Duquenne (Teoremas \ref{teo:gd} y~\ref{teo:gd-minima}, Corolario~\ref{cor:algoritmo-base}) & \texttt{guigues\_duquenne} & \texttt{test\_premisas\_son\_las\_pseudo\_intensiones}, \texttt{test\_base\_completa\_y\_no\_redundante}, \texttt{test\_atributo\_universal\_da\_premisa\_vacia} \\
+  Armstrong y LinClosure (Teoremas \ref{teo:armstrong} y~\ref{teo:linclosure}) & \texttt{attribute\_closure}, \texttt{ImplicationClosure} & Las cuatro pruebas de \path{test_armstrong.py} \\
+  Dependencias y claves (Teorema~\ref{teo:df-implicaciones}, Proposición~\ref{prop:claves}) & Por implementar (Fase~3) & --- \\
+  Conceptos como características (Sección~\ref{sec:ml}) & Por implementar (Fase~4) & --- \\
+  \bottomrule
+\end{longtable}
+\endgroup

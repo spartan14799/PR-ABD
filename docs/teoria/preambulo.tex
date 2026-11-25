@@ -1,14 +1,19 @@
 
-\usepackage[T1]{fontenc}
-\usepackage[utf8]{inputenc}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\else
+  \usepackage{fontspec}
+\fi
 \usepackage[spanish, es-noshorthands, es-tabla, es-nodecimaldot]{babel}
-\usepackage{lmodern}
 \usepackage{microtype}
 \usepackage[margin=2.5cm]{geometry}
 
 \usepackage{amsmath, amssymb, amsthm, mathtools}
 
-\usepackage{booktabs, tabularx, array}
+\usepackage{booktabs, tabularx, array, longtable}
 
 \usepackage{csquotes}
 \usepackage[backend=biber, style=authoryear, maxcitenames=2,
@@ -17,6 +22,7 @@
 
 \usepackage{xcolor}
 \definecolor{enlace}{RGB}{0, 70, 140}
+\usepackage{tikz}
 \usepackage[colorlinks=true, linkcolor=enlace, citecolor=enlace,
             urlcolor=enlace]{hyperref}
 
@@ -38,3 +44,13 @@
 \DeclareMathOperator{\SSE}{SSE}
 \DeclareMathOperator{\AMISE}{AMISE}
 \DeclareMathOperator{\IQR}{IQR}
+\DeclareMathOperator{\ARI}{ARI}
+\DeclareMathOperator{\sop}{sop}
+
+% Evita líneas desbordadas cuando un nombre de función largo no se puede partir
+\setlength{\emergencystretch}{1.5em}
+
+% Retículo de conceptos y atributos del ejemplo de los tumores (Secciones 2 a 5)
+\newcommand{\Ret}{\mathfrak{B}}
+\newcommand{\dB}{d_{\mathrm{B}}}
+\newcommand{\dM}{d_{\mathrm{M}}}

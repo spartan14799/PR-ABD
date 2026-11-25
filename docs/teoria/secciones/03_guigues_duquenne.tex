@@ -1,4 +1,119 @@
 \section{Implicaciones y base de Guigues--Duquenne}
 \label{sec:implicaciones}
 
-\emph{Pendiente: esta sección se completará en la Fase~3 (implicaciones).}
+Los conceptos dicen qué atributos aparecen juntos; las implicaciones dicen qué atributos arrastran a otros. Esta sección define las implicaciones de un contexto y demuestra el resultado central de la fase: la base de Guigues--Duquenne es la menor lista de implicaciones de la que se deducen todas las demás. Después justifica el algoritmo que la calcula con NextClosure y muestra cómo separar las implicaciones que aporta la escala de las que vienen de los datos. En el código, la base está en \path{src/implications/guigues_duquenne.py}, con la clausura de \path{armstrong.py} (Sección~\ref{sec:armstrong}).
+
+
+\subsection{Implicaciones y consecuencia}
+\label{sec:implicaciones-def}
+
+\begin{definicion}[implicación]\label{def:implicacion}
+Una \emph{implicación} $X \to Y$, con $X, Y \subseteq M$, tiene \emph{premisa}~$X$ y \emph{conclusión}~$Y$. Un conjunto $T \subseteq M$ la \emph{respeta} si $X \not\subseteq T$ o $Y \subseteq T$, y es \emph{válida} en~$\K$ si la respetan todas las filas~$g'$: todo objeto con los atributos de~$X$ tiene los de~$Y$.
+\end{definicion}
+
+\begin{proposicion}[\cite{ganter1999}]\label{prop:validez}
+$X \to Y$ es válida si y solo si $X' \subseteq Y'$, si y solo si $Y \subseteq X''$. Un conjunto respeta todas las implicaciones válidas si y solo si es una intensión.
+\end{proposicion}
+
+Así, para saber si una implicación es válida basta con una clausura. Una implicación válida es una regla de asociación de confianza~1: un solo objeto que no la cumpla la invalida.
+
+\begin{definicion}[clausura, consecuencia y base]\label{def:base}
+Sea $\mathcal{L}$ un conjunto de implicaciones. $\mathcal{L}(X)$ es el menor conjunto que contiene a~$X$ y respeta~$\mathcal{L}$, y $X \to Y$ \emph{se deduce} de~$\mathcal{L}$, $\mathcal{L} \models X \to Y$, si la respeta todo conjunto que respeta~$\mathcal{L}$. $\mathcal{L}$ es una \emph{base} de~$\K$ si es \emph{correcta} (sus implicaciones son válidas) y \emph{completa} (de ella se deducen todas las válidas), y es \emph{no redundante} si ninguna de sus implicaciones se deduce de las demás.
+\end{definicion}
+
+\begin{proposicion}\label{prop:clausura-impl}
+(1)~$X \mapsto \mathcal{L}(X)$ es un operador de clausura, y $\mathcal{L}(X)$ es el valor final de la sucesión $W_0 = X$, $W_{s+1} = W_s \cup \bigcup \{ Y : (Z \to Y) \in \mathcal{L},\ Z \subseteq W_s \}$. (2)~$\mathcal{L} \models X \to Y$ si y solo si $Y \subseteq \mathcal{L}(X)$. (3)~$\mathcal{L}$ es una base si y solo si $\mathcal{L}(X) = X''$ para todo $X \subseteq M$.
+\end{proposicion}
+
+La sucesión de~(1) es la función \texttt{clausura\_punto\_fijo} de las pruebas, y la Sección~\ref{sec:armstrong} da un algoritmo de tiempo lineal. La parte~(3) es lo que comprueba \texttt{test\_base\_completa\_y\_no\_redundante}. Las implicaciones $X \to X''$, una por subconjunto, forman una base de $2^p$ elementos; la pregunta es cuál es la más pequeña.
+
+
+\subsection{Pseudo-intensiones y base canónica}
+\label{sec:base-canonica}
+
+\begin{definicion}[pseudo-intensión]\label{def:pseudo}
+$P \subseteq M$ es una \emph{pseudo-intensión} si $P \ne P''$ y $Q'' \subseteq P$ para toda pseudo-intensión $Q \subsetneq P$.
+\end{definicion}
+
+La definición es recursiva pero no circular: solo usa pseudo-intensiones con menos elementos.
+
+\begin{teorema}[\cite{guigues1986}]\label{teo:gd}
+$\mathcal{L}_{\mathrm{GD}} = \{ P \to P'' \setminus P : P \text{ es una pseudo-intensión} \}$ es una base no redundante de~$\K$.
+\end{teorema}
+
+\begin{proof}
+Si $P \subseteq T$, $T$ respeta $P \to P'' \setminus P$ si y solo si $P'' \subseteq T$. \emph{Correcta:} $P'' \setminus P \subseteq P''$. \emph{Completa:} si $T$ respeta~$\mathcal{L}_{\mathrm{GD}}$ y no es una intensión, toda pseudo-intensión $Q \subsetneq T$ cumple $Q'' \subseteq T$, así que $T$ es una pseudo-intensión; como respeta su propia implicación, $T'' \subseteq T$, una contradicción. Así, todo conjunto que respeta~$\mathcal{L}_{\mathrm{GD}}$ es una intensión; en particular $\mathcal{L}_{\mathrm{GD}}(X)$ es una intensión que contiene a~$X$, luego $X'' \subseteq \mathcal{L}_{\mathrm{GD}}(X)$, y la corrección da la igualdad; por la Proposición~\ref{prop:clausura-impl}, es una base. \emph{No redundante:} una pseudo-intensión~$P$ respeta las demás implicaciones, porque toda otra pseudo-intensión $Q \subseteq P$ es un subconjunto propio de~$P$ y cumple $Q'' \subseteq P$; así que $P$ es cerrado respecto de ellas y no contiene a $P'' \setminus P \neq \emptyset$.
+\end{proof}
+
+Para ver que ninguna base es más pequeña se necesitan cuatro propiedades de las pseudo-intensiones.
+
+\begin{lema}\label{lem:pseudo}
+Sean $P$ y~$Q$ pseudo-intensiones y $A, X \subseteq M$. (1)~Si $X$ no es una intensión, hay una pseudo-intensión $R \subseteq X$ con $R'' \not\subseteq X$. (2)~Si $P \subsetneq Q$, entonces $P'' \neq Q''$. (3)~Si $P \not\subseteq Q$ y $Q \not\subseteq P$, entonces $P \cap Q$ es una intensión. (4)~Si $A \subseteq P$ y $A'' \not\subseteq P$, entonces $A'' = P''$.
+\end{lema}
+
+\begin{proof}
+(1)~Por la demostración del teorema, $X$ no respeta~$\mathcal{L}_{\mathrm{GD}}$. (2)~$P'' \subseteq Q \subsetneq Q''$. (3)~Si $P \cap Q$ no fuera una intensión, por~(1) habría una pseudo-intensión $R \subseteq P \cap Q$ con $R'' \not\subseteq P \cap Q$; como $P$ y~$Q$ no están contenidas una en la otra, $R \subsetneq P$ y $R \subsetneq Q$, así que $R'' \subseteq P \cap Q$, una contradicción. (4)~$A'' = \mathcal{L}_{\mathrm{GD}}(A)$ es el valor final de la sucesión $W_0 = A$, en la que cada paso agrega~$R''$ por cada pseudo-intensión $R \subseteq W_s$. Mientras $W_s \subsetneq P$, esas~$R$ son subconjuntos propios de~$P$ y cumplen $R'' \subseteq P$, así que $W_{s+1} \subseteq P$. Como $A'' \not\subseteq P$, la sucesión solo puede salir de~$P$ pasando por $W_s = P$; entonces $P \subseteq A''$, y $P'' \subseteq A'' \subseteq P''$.
+\end{proof}
+
+\begin{teorema}[minimalidad, \cite{guigues1986}]\label{teo:gd-minima}
+Toda base de~$\K$ tiene al menos tantas implicaciones como~$\mathcal{L}_{\mathrm{GD}}$.
+\end{teorema}
+
+\begin{proof}
+Sea $\mathcal{L}$ una base y $P$ una pseudo-intensión. Como $\mathcal{L}(P) = P'' \neq P$, hay una implicación $(A \to B) \in \mathcal{L}$ con $A \subseteq P$ y $B \not\subseteq P$; como $B \subseteq A''$, se tiene $A'' \not\subseteq P$, y por~(4), $A'' = P''$. Si una misma implicación sirviera para dos pseudo-intensiones distintas $P$ y~$Q$, sería $P'' = Q''$; por~(2) no estarían contenidas una en la otra, por~(3) $P \cap Q$ sería una intensión, y de $A \subseteq P \cap Q$ saldría $A'' \subseteq P$, una contradicción. Así, $\mathcal{L}$ tiene al menos una implicación por cada pseudo-intensión.
+\end{proof}
+
+\begin{proposicion}[premisa vacía y premisas reducidas]\label{prop:premisa-vacia}
+(1)~$\emptyset$ es una pseudo-intensión si y solo si $G' \neq \emptyset$, es decir, si hay atributos universales; entonces la base contiene $\emptyset \to G'$. (2)~Si cada premisa~$P$ se reemplaza por un $P^0 \subseteq P$ con $P'' \setminus P \subseteq (P^0)''$, el resultado sigue siendo una base, del mismo tamaño mínimo.
+\end{proposicion}
+
+Por el Corolario~\ref{cor:universal}, con la escala ordinal la parte~(1) se cumple casi siempre en este proyecto. La parte~(2) sirve para leer las reglas, porque las pseudo-intensiones son largas: de $P^0 \to C$ se deduce $P \to C$, así que la nueva lista sigue siendo completa, y no puede tener menos implicaciones que la base. Un $P^0$ minimal se obtiene quitando atributos de~$P$ uno a uno mientras se cumpla la condición.
+
+
+\subsection{Cálculo con NextClosure}
+\label{sec:calculo-base}
+
+\begin{proposicion}\label{prop:siguiente-pseudo}
+Sea $\mathcal{L}_A$ el conjunto de implicaciones $P \to P''$ de las pseudo-intensiones $P \preceq A$. El menor conjunto, en orden léctico, que es mayor que~$A$ y respeta~$\mathcal{L}_A$ es la siguiente intensión o pseudo-intensión después de~$A$.
+\end{proposicion}
+
+\begin{proof}
+Las intensiones respetan toda implicación válida, y una pseudo-intensión $X \succ A$ respeta~$\mathcal{L}_A$, porque cada $P \preceq A$ contenido en~$X$ es distinto de~$X$ y cumple $P'' \subseteq X$. Sea $X$ el menor conjunto mayor que~$A$ que respeta~$\mathcal{L}_A$, y supóngase que no es una intensión. Si $Q \subsetneq X$ es una pseudo-intensión, entonces $Q \prec X$ (Proposición~\ref{prop:lectico}); si $Q \preceq A$, $X$ respeta su implicación y $Q'' \subseteq X$, y no puede ser $A \prec Q$, porque $Q$ respetaría~$\mathcal{L}_A$ y estaría antes que~$X$. Así, $X$ es una pseudo-intensión, y por lo anterior ninguna intensión ni pseudo-intensión está entre $A$ y~$X$.
+\end{proof}
+
+\begin{corolario}[algoritmo]\label{cor:algoritmo-base}
+Empezando con $A = \emptyset$ y $\mathcal{L} = \emptyset$, se repite: si $A \neq A''$, se agrega $A \to A'' \setminus A$ a~$\mathcal{L}$; si $A = M$, se termina; si no, se calcula el siguiente~$A$ con NextClosure (Teorema~\ref{teo:nextclosure}) para el operador $X \mapsto \mathcal{L}(X)$. Así se recorren todas las intensiones y pseudo-intensiones en orden léctico, y al final $\mathcal{L} = \mathcal{L}_{\mathrm{GD}}$.
+\end{corolario}
+
+En el código, \texttt{guigues\_duquenne} es exactamente este ciclo. El operador de clausura es un objeto \texttt{ImplicationClosure} (\S\ref{sec:axiomas}) al que se le van agregando las implicaciones y que se pasa como parámetro a \texttt{next\_closure}. La función \texttt{format\_implications} escribe el resultado como texto, con la premisa vacía como~$\{\emptyset\}$. El algoritmo pasa también por todas las intensiones, y el número de pseudo-intensiones puede ser exponencial en el tamaño del contexto; contarlas es \#P-difícil \parencite{kuznetsov2004intratable}.
+
+
+\subsection{Implicaciones de fondo e implicaciones de los datos}
+\label{sec:fondo}
+
+Por las Proposiciones \ref{prop:particion} y~\ref{prop:cadena} y el Corolario~\ref{cor:universal}, las escalas producen implicaciones válidas en cualquier conjunto de datos: $\{(m{\le}v_i)\} \to \{(m{\le}v_j)\}$ y $\{(m{\ge}v_j)\} \to \{(m{\ge}v_i)\}$ para $i < j$; $\emptyset \to \{(m{\le}v_r)\}$ si no hay valores faltantes; y $\{(m{=}v), (m{=}w)\} \to N$ para $v \neq w$, porque ningún objeto tiene la premisa. Sea $\mathcal{L}_F$ el conjunto de estas implicaciones.
+
+\begin{definicion}[implicaciones de fondo]\label{def:fondo}
+$X \to Y$ es \emph{de fondo} si $Y \subseteq \mathcal{L}_F(X)$. En una implicación $P \to C$ de la base, $C \cap \mathcal{L}_F(P)$ es su \emph{parte de fondo} y $C \setminus \mathcal{L}_F(P)$ su \emph{parte de los datos}, que es la única que merece interpretación.
+\end{definicion}
+
+\begin{ejemplo}[la base del ejemplo]\label{ej:base}
+En el contexto de los tumores, $\mathcal{L}_F$ tiene $\{r_0\} \to \{r_1\}$, $\{r_1\} \to \{r_2\}$, $\{t_0\} \to \{t_1\}$, $\{t_1\} \to \{t_2\}$, $\emptyset \to \{r_2, t_2\}$ y $\{\dB, \dM\} \to M$. La base de Guigues--Duquenne tiene 7~implicaciones:
+\begin{center}
+\small
+\begin{tabular}{rllll}
+  \toprule
+  & Premisa & Conclusión & Premisa reducida & Parte de los datos \\
+  \midrule
+  1 & $\emptyset$ & $\{r_2, t_2\}$ & $\emptyset$ & $\emptyset$ \\
+  2 & $\{r_2, t_2, \dM\}$ & $\{t_1\}$ & $\{\dM\}$ & $\{t_1\}$ \\
+  3 & $\{r_2, t_2, \dB\}$ & $\{r_1\}$ & $\{\dB\}$ & $\{r_1\}$ \\
+  4 & $\{r_2, t_0, t_2\}$ & $\{r_1, t_1, \dB\}$ & $\{t_0\}$ & $\{r_1, \dB\}$ \\
+  5 & $\{r_1, r_2, t_2\}$ & $\{\dB\}$ & $\{r_1\}$ & $\{\dB\}$ \\
+  6 & $\{r_1, r_2, t_1, t_2, \dB, \dM\}$ & $\{r_0, t_0\}$ & $\{\dB, \dM\}$ & $\emptyset$ \\
+  7 & $\{r_0, r_2, t_2\}$ & $\{r_1, \dB\}$ & $\{r_0\}$ & $\{\dB\}$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+Las implicaciones 1 y~6 vienen enteras de las escalas. La~3 y la~5 dicen que $\dB$ y~$r_1$ son equivalentes, como ya mostraba el diagrama: un tumor es benigno si y solo si su radio es${}\le 17.13$. La~2 dice que todo tumor maligno tiene textura${}\le 21.37$. Con solo seis objetos, estas regularidades no son conclusiones médicas: el ejemplo muestra cómo se lee la base.
+\end{ejemplo}

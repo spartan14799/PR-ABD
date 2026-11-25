@@ -1,5 +1,82 @@
 \section{Conceptos formales como características}
 \label{sec:ml}
 
-\emph{Pendiente: esta sección se completará en la Fase~4 (Machine Learning).}
+La fase opcional usa los conceptos del retículo como características binarias para clasificar con SVM y agrupar con $k$-medias, y compara los resultados con los de la representación original. Aprender a partir de conceptos tiene una larga tradición en FCA \parencite{kuznetsov2004ml}; aquí se usa la forma más simple, en la que cada concepto es una característica. El código de esta fase irá en \path{src/ml/pipeline.py}, con scikit-learn.
 
+En esta sección, $G$ es el conjunto de objetos de entrenamiento, cada uno con su clase (en Breast Cancer Wisconsin, maligno o benigno). El contexto $\K = (G, M, I)$ se construye solo con las variables predictoras: la clase no es un atributo. Un objeto nuevo, discretizado y escalado con los mismos cortes y escalas, queda descrito por el conjunto $x \subseteq M$ de sus atributos binarios.
+
+
+\subsection{Características de conceptos}
+\label{sec:caracteristicas}
+
+\begin{definicion}[características de conceptos]\label{def:caracteristicas}
+Para una lista $\mathcal{C}$ de conceptos, la \emph{representación por conceptos} de un objeto~$x$ es el vector $\varphi(x) \in \{0, 1\}^{\mathcal{C}}$ con $\varphi_c(x) = 1$ si $B \subseteq x$ y $\varphi_c(x) = 0$ si no, para cada $c = (A, B) \in \mathcal{C}$. Para un objeto de entrenamiento, $x = g'$.
+\end{definicion}
+
+Con máscaras de bits, cada característica es una sola operación, $B \mathbin{\&} x = B$, y para un objeto nuevo no hay que recalcular el retículo.
+
+\begin{proposicion}\label{prop:conjunciones}
+(1)~Para $g \in G$, $\varphi_{(A, B)}(g') = 1$ si y solo si $g \in A$. (2)~Para todo $Y \subseteq M$, la función $g \mapsto [\, Y \subseteq g' \,]$ coincide en~$G$ con la característica del concepto $(Y', Y'')$, y conceptos distintos dan columnas distintas: las características de~$\Ret(\K)$ son exactamente las conjunciones de atributos, evaluadas en los objetos de entrenamiento, sin repeticiones. (3)~La característica del concepto atributo~$\mu m$ es la columna~$m$ de la matriz de incidencia.
+\end{proposicion}
+
+Las tres partes salen de que $B \subseteq g'$ equivale a $g \in B'$. Así, la representación por todos los conceptos contiene las columnas del contexto binario y les agrega sus conjunciones no redundantes; los experimentos miden si esas conjunciones ayudan. Para un objeto nuevo, $[\, Y \subseteq x \,]$ y $[\, Y'' \subseteq x \,]$ pueden diferir, porque la implicación $Y \to Y''$ de los datos de entrenamiento puede no cumplirse en~$x$; usar la intensión es la opción más específica, y usar un generador minimal, la más general.
+
+Como el número de conceptos puede ser exponencial (con Animal Species hay 7\,387 para 200~objetos), hay que elegir una lista~$\mathcal{C}$ más corta. El \emph{soporte} de $(A, B)$ es $\sop(A, B) = \lvert A \rvert / \lvert G \rvert$, y el \emph{iceberg} de umbral~$\theta$ son los conceptos con soporte${}\ge \theta$ \parencite{stumme2002}. Si $c \le d$, entonces $\sop(c) \le \sop(d)$, así que el iceberg contiene a todos los conceptos por encima de los suyos; y como en Close-by-One la extensión de un hijo está contenida en la de su padre, la búsqueda se puede podar en cuanto el soporte baja de~$\theta$. Otra opción es la \emph{estabilidad} de un concepto, la fracción de subconjuntos $C \subseteq A$ con $C' = B$ \parencite{kuznetsov2007}, que favorece a los conceptos que no dependen de unos pocos objetos.
+
+\begin{proposicion}[núcleo del retículo]\label{prop:nucleo}
+Con $\mathcal{C} = \Ret(\K)$ y $g, h \in G$, $\langle \varphi(g'), \varphi(h') \rangle$ es el número de conceptos por encima de $\gamma g \vee \gamma h$, que es el número de intensiones contenidas en $g' \cap h'$; y $\lVert \varphi(g') - \varphi(h') \rVert^2$ es el número de conceptos cuya extensión contiene a uno solo de los dos.
+\end{proposicion}
+
+Se sigue de las Proposiciones \ref{prop:objeto-atributo} y~\ref{prop:conjunciones}: un concepto contiene a $g$ y a~$h$ si y solo si está por encima de $\gamma g$ y de~$\gamma h$. Dos objetos son parecidos si comparten muchos conceptos, y una SVM lineal sobre estas características es una SVM con este núcleo.
+
+
+\subsection{Modelos}
+\label{sec:modelos}
+
+Sean $(x_i, y_i)$, con $x_i \in \R^d$ e $y_i \in \{-1, +1\}$, los datos de entrenamiento. La \emph{máquina de vectores de soporte} de margen suave \parencite{cortes1995} busca el clasificador $f(x) = \operatorname{signo}(\langle w, x \rangle + b)$ que resuelve
+\[
+  \min_{w, b} \ \frac{1}{2} \lVert w \rVert^2 + C \sum_{i} \max\bigl( 0,\ 1 - y_i (\langle w, x_i \rangle + b) \bigr).
+\]
+El primer término maximiza el margen, que es $2/\lVert w \rVert$, y el segundo penaliza, con peso~$C$, los datos que quedan dentro del margen o del lado equivocado (la pérdida bisagra). La solución es $w = \sum_i \alpha_i y_i x_i$, donde solo los \emph{vectores de soporte} tienen $\alpha_i > 0$, y depende de los datos solo a través de los productos internos $\langle x_i, x_j \rangle$, que se pueden reemplazar por un núcleo \parencite{cortes1995, hastie2009}. Sobre las características de conceptos, cada peso~$w_c$ corresponde a una conjunción de condiciones sobre intervalos, como \enquote{radio${}\le 17.13$ y textura${}\le 21.37$}, así que los pesos más grandes se leen como reglas. Las variables numéricas originales se estandarizan con la media y la desviación de la parte de entrenamiento, y $C$ se elige por validación cruzada.
+
+El algoritmo de Lloyd en~$\R^d$ tiene la misma garantía que en una dimensión: el Teorema~\ref{teo:lloyd} vale palabra por palabra, aplicando el Lema~\ref{lem:media} a cada coordenada. scikit-learn elige los centroides iniciales con $k$-means++ \parencite{arthur2007} y repite el algoritmo con varias inicializaciones, porque el resultado es un óptimo local (Observación~\ref{obs:optimo-local}). Para vectores binarios, $\lVert u - v \rVert^2$ es el número de coordenadas en que difieren, y cada coordenada de un centroide es la fracción de objetos del grupo con esa característica.
+
+
+\subsection{Evaluación sin fuga de información}
+\label{sec:evaluacion}
+
+Con la clase maligna como positiva y VP, FP, VN y FN los verdaderos y falsos positivos y negativos,
+\begin{gather*}
+  \text{exactitud} = \frac{\mathrm{VP} + \mathrm{VN}}{n}, \qquad
+  \text{sensibilidad} = \frac{\mathrm{VP}}{\mathrm{VP} + \mathrm{FN}}, \\
+  \text{especificidad} = \frac{\mathrm{VN}}{\mathrm{VN} + \mathrm{FP}}, \qquad
+  F_1 = \frac{2\,\mathrm{VP}}{2\,\mathrm{VP} + \mathrm{FP} + \mathrm{FN}}.
+\end{gather*}
+En diagnóstico, el error más costoso es el falso negativo, así que la sensibilidad se reporta junto con la exactitud. Los modelos se evalúan con \emph{validación cruzada estratificada}: los objetos se dividen en $F$~partes con la misma proporción de clases, cada parte se predice con un modelo entrenado en las demás, y se reportan la media y la desviación de cada métrica \parencite{hastie2009}.
+
+\begin{observacion}[qué se ajusta dentro de cada partición]\label{obs:fuga}
+Todo lo que mira los datos se calcula solo con la parte de entrenamiento y se aplica, sin cambios, a la de prueba: el número de intervalos y los cortes de la discretización (con los cortes extremos en $-\infty$ y $+\infty$, para que los valores nuevos fuera de rango caigan en el primer o el último intervalo), los valores de cada escala, el retículo y los conceptos elegidos, la estandarización y los hiperparámetros, que se eligen con una segunda validación cruzada dentro del entrenamiento. Calcular el retículo con todos los datos antes de dividirlos sería una fuga, y si la clase fuera un atributo del contexto, sus conceptos atributo serían características iguales a la clase.
+\end{observacion}
+
+Para el agrupamiento se usan el \emph{índice de Rand ajustado} \parencite{hubert1985}, que compara los grupos con las clases y vale~1 si coinciden y~0 en promedio si son aleatorios, y la \emph{silueta media} \parencite{rousseeuw1987}, que mide qué tan separados están los grupos sin usar las clases: para cada objeto, $s = (b - a)/\max(a, b)$, con $a$ su distancia media a su grupo y $b$ la menor distancia media a otro grupo.
+
+\begin{observacion}[diseño del experimento]\label{obs:diseno}
+Se comparan tres representaciones: (R1)~las variables originales estandarizadas, (R2)~las columnas del contexto binario y (R3)~las características de conceptos, de todo el retículo o de un iceberg. Para clasificar se usa una SVM lineal en las tres, y una SVM con núcleo gaussiano en~R1 como referencia, con validación cruzada estratificada de 10~partes; se reportan exactitud, sensibilidad, especificidad, $F_1$, número de características y tiempo, comparando partición por partición. Para agrupar se usa $k$-medias con $k = 2$ y se reportan el índice de Rand ajustado respecto del diagnóstico y la silueta. Como R3 contiene a~R2 (Proposición~\ref{prop:conjunciones}), la comparación entre las dos mide lo que aportan las conjunciones.
+\end{observacion}
+
+\begin{ejemplo}[características del ejemplo]\label{ej:caracteristicas}
+Sin las columnas del diagnóstico, el contexto de los tumores tiene 8~conceptos, con intensiones $c_0 = \{r_2, t_2\}$, $c_1 = \{r_2, t_1, t_2\}$, $c_2 = \{r_1, r_2, t_2\}$, $c_3 = \{r_1, r_2, t_1, t_2\}$, $c_4 = \{r_1, r_2, t_0, t_1, t_2\}$, $c_5 = \{r_0, r_1, r_2, t_2\}$, $c_6 = \{r_0, r_1, r_2, t_1, t_2\}$ y $c_7 = M$. La representación por conceptos es:
+\begin{center}
+\small
+\begin{tabular}{c|cccccccc|c}
+  & $c_0$ & $c_1$ & $c_2$ & $c_3$ & $c_4$ & $c_5$ & $c_6$ & $c_7$ & Clase \\ \hline
+  $g_1$ & 1 & 1 & 1 & 1 & 1 & 1 & 1 & 1 & B \\
+  $g_2$ & 1 & 1 & 1 & 1 & 0 & 1 & 1 & 0 & B \\
+  $g_3$ & 1 & 1 & 0 & 0 & 0 & 0 & 0 & 0 & M \\
+  $g_4$ & 1 & 0 & 1 & 0 & 0 & 1 & 0 & 0 & B \\
+  $g_5$ & 1 & 1 & 0 & 0 & 0 & 0 & 0 & 0 & M \\
+  $g_6$ & 1 & 1 & 1 & 1 & 1 & 0 & 0 & 0 & B
+\end{tabular}
+\end{center}
+La columna de~$c_2$, el concepto atributo de~$r_1$, separa las dos clases: \enquote{radio${}\le 17.13$} identifica a los benignos de esta muestra. Por la Proposición~\ref{prop:nucleo}, $g_1$ y~$g_2$ comparten seis conceptos y $g_1$ y~$g_3$ solo dos. $g_3$ y~$g_5$ tienen el mismo vector, porque la discretización los volvió indistinguibles (Corolario~\ref{cor:filas}).
+\end{ejemplo}
